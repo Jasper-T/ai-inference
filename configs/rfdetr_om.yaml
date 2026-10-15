@@ -1,0 +1,32 @@
+# Official RF-DETR Nano COCO converted to static OM with AIPP.
+# Conversion must embed BGR-to-RGB and the ONNX normalization in static AIPP.
+model:
+  name: rfdetr_nano_coco_aipp
+  path: ../models/rfdetr-nano.om
+runtime:
+  backend: om
+  warmup: true
+  warmup_runs: 3
+  options:
+    device_id: 0
+  batch:
+    mode: fixed
+    size: 1
+    padding: repeat_last
+preprocess:
+  source_color: BGR
+  steps:
+  - resize:
+      width: 384
+      height: 384
+  - pack:
+      input_name: input
+postprocess:
+  steps:
+  - rfdetr_decode:
+      boxes_name: dets
+      logits_name: labels
+      threshold: 0.4
+      clip_boxes: true
+      integer_boxes: false
+      num_classes: 91

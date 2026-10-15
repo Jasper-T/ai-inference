@@ -1,0 +1,38 @@
+model:
+  name: yunet_2023
+  path: ../models/face_detection_yunet_2023mar.onnx
+runtime:
+  backend: onnxruntime
+  warmup: false
+  warmup_runs: 3
+  batch:
+    mode: fixed
+    size: 1
+    padding: repeat_last
+  options:
+    providers: cpu
+    intra_op_num_threads: 1
+preprocess:
+  source_color: BGR
+  steps:
+  - resize:
+      width: 640
+      height: 640
+  - color:
+      source: BGR
+      target: BGR
+  - cast:
+      dtype: float32
+  - layout:
+      source: HWC
+      target: CHW
+  - pack:
+      input_name: input
+postprocess:
+  steps:
+  - yunet_decode:
+      threshold: 0.8
+      nms_threshold: 0.3
+      top_k: 5000
+      max_detections: 100
+      num_classes: 1

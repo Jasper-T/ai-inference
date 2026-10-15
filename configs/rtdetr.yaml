@@ -1,0 +1,37 @@
+model:
+  name: rtdetr
+  path: ../models/rtdetr-deployed-v1.onnx
+runtime:
+  backend: onnxruntime
+  warmup: false
+  warmup_runs: 3
+  batch:
+    mode: dynamic
+    size: 2
+    padding: repeat_last
+  options:
+    providers: cpu
+    intra_op_num_threads: 1
+preprocess:
+  source_color: BGR
+  steps:
+  - color:
+      source: BGR
+      target: RGB
+  - resize:
+      width: 640
+      height: 640
+      backend: pillow
+  - normalize:
+      divisor: 255
+  - layout:
+      source: HWC
+      target: CHW
+  - pack:
+      input_name: images
+      sizes_name: orig_target_sizes
+postprocess:
+  steps:
+  - rtdetr_decode:
+      threshold: 0.5
+      num_classes: 80

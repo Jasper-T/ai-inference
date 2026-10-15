@@ -1,0 +1,49 @@
+model:
+  name: yolo11n_coco
+  path: ../models/yolo11n.onnx
+runtime:
+  backend: onnxruntime
+  warmup: true
+  warmup_runs: 3
+  options:
+    providers: cpu
+    intra_op_num_threads: 1
+  batch:
+    mode: fixed
+    size: 1
+    padding: repeat_last
+preprocess:
+  source_color: BGR
+  steps:
+  - resize:
+      width: 640
+      height: 640
+      keep_ratio: true
+      scale_up: true
+  - padding:
+      width: 640
+      height: 640
+      value: 114
+      alignment: center
+  - color:
+      source: BGR
+      target: RGB
+  - normalize:
+      divisor: 255
+      dtype: float32
+  - layout:
+      source: HWC
+      target: CHW
+  - pack:
+      input_name: images
+postprocess:
+  steps:
+  - yolo_decode:
+      layout: NCQ
+      confidence_threshold: 0.25
+      iou_threshold: 0.7
+      max_detections: 300
+      max_nms: 30000
+      agnostic_nms: false
+      clip_boxes: true
+      num_classes: 80

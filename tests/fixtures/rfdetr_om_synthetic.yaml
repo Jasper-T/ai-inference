@@ -1,0 +1,30 @@
+model:
+  name: rfdetr_aipp_synthetic
+  path: ../../models/rfdetr_synthetic.om
+runtime:
+  backend: om
+  warmup: true
+  warmup_runs: 3
+  options:
+    device_id: 0
+  batch:
+    mode: fixed
+    size: 4
+    padding: repeat_last
+preprocess:
+  source_color: BGR
+  steps:
+  - resize:
+      width: 560
+      height: 560
+  - pack:
+      input_name: input
+postprocess:
+  steps:
+  - rfdetr_decode:
+      boxes_name: dets
+      logits_name: labels
+      threshold: 0.4
+      clip_boxes: false
+      integer_boxes: true
+      num_classes: 2

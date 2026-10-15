@@ -1,0 +1,48 @@
+# Official RF-DETR Nano COCO; 91 logit slots use sparse COCO category IDs.
+model:
+  name: rfdetr_nano_coco
+  path: ../models/rfdetr-nano.onnx
+runtime:
+  backend: onnxruntime
+  warmup: false
+  warmup_runs: 3
+  options:
+    providers: cpu
+    intra_op_num_threads: 1
+  batch:
+    mode: fixed
+    size: 1
+    padding: repeat_last
+preprocess:
+  source_color: BGR
+  steps:
+  - resize:
+      width: 384
+      height: 384
+  - color:
+      source: BGR
+      target: RGB
+  - normalize:
+      divisor: 255
+      mean:
+      - 0.485
+      - 0.456
+      - 0.406
+      std:
+      - 0.229
+      - 0.224
+      - 0.225
+  - layout:
+      source: HWC
+      target: CHW
+  - pack:
+      input_name: input
+postprocess:
+  steps:
+  - rfdetr_decode:
+      boxes_name: dets
+      logits_name: labels
+      threshold: 0.4
+      clip_boxes: true
+      integer_boxes: false
+      num_classes: 91

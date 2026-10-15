@@ -1,0 +1,35 @@
+model:
+  name: sface_2021
+  path: ../models/face_recognition_sface_2021dec.onnx
+runtime:
+  backend: onnxruntime
+  warmup: false
+  warmup_runs: 3
+  batch:
+    mode: fixed
+    size: 1
+    padding: repeat_last
+  options:
+    providers: cpu
+    intra_op_num_threads: 1
+preprocess:
+  source_color: BGR
+  steps:
+  - face_align:
+      aligned_input: false
+  - color:
+      source: BGR
+      target: RGB
+  - cast:
+      dtype: float32
+  - layout:
+      source: HWC
+      target: CHW
+  - pack:
+      input_name: data
+postprocess:
+  steps:
+  - sface_features:
+      output_name: fc1
+      dimensions: 128
+  - l2_normalize: {}

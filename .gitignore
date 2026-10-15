@@ -1,0 +1,72 @@
+# Python bytecode and tooling caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.tox/
+.nox/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Build and packaging output
+/build/
+/dist/
+*.egg-info/
+.eggs/
+
+# Coverage reports
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Local inference output and model weights
+/artifacts/
+/models/
+*.onnx
+*.onnx.data
+*.pt
+*.pth
+*.engine
+*.plan
+/:memory:.ses
+
+# Local environment settings and logs
+.env
+.env.*
+!.env.example
+!.env.sample
+*.log
+
+# Editor and OS files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+._*
+Thumbs.db
+
+# Local scratch files, backups and machine-specific configs
+/work/
+/outputs/
+/backups/
+/list/
+/tests/1.jpg
+configs/*.local.yaml
+configs/*.local.yml
+*.bak
+*.tmp
+
+# Additional local model formats
+*.om
+*.safetensors
+*.ckpt
+
+# Annotated inference runs
+/results/

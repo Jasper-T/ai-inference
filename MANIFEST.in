@@ -1,0 +1,10 @@
+include README.md
+include CHANGELOG.md
+include uv.lock
+recursive-include configs *.yaml
+recursive-include docs *.md
+recursive-include examples *.py *.md
+recursive-include tests *.py *.yaml *.jpg
+recursive-include scripts *.py *.md
+global-exclude *.local.yaml *.local.yml
+global-exclude __pycache__ *.py[cod]

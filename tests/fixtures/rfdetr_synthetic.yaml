@@ -1,0 +1,48 @@
+# Synthetic regression contract; independent of real model examples.
+model:
+  name: rfdetr_synthetic
+  path: ../../models/rfdetr_synthetic.onnx
+runtime:
+  backend: onnxruntime
+  warmup: false
+  warmup_runs: 3
+  options:
+    providers: cuda
+    intra_op_num_threads: 1
+  batch:
+    mode: fixed
+    size: 4
+    padding: repeat_last
+preprocess:
+  source_color: BGR
+  steps:
+  - resize:
+      width: 560
+      height: 560
+  - color:
+      source: BGR
+      target: RGB
+  - normalize:
+      divisor: 255
+      mean:
+      - 0.485
+      - 0.456
+      - 0.406
+      std:
+      - 0.229
+      - 0.224
+      - 0.225
+  - layout:
+      source: HWC
+      target: CHW
+  - pack:
+      input_name: input
+postprocess:
+  steps:
+  - rfdetr_decode:
+      boxes_name: dets
+      logits_name: labels
+      threshold: 0.4
+      clip_boxes: false
+      integer_boxes: true
+      num_classes: 2
