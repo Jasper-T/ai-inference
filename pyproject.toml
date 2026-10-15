@@ -55,6 +55,10 @@ dev = [
 ]
 
 [tool.uv]
+required-environments = [
+    "sys_platform == 'linux' and platform_machine == 'x86_64' and python_version == '3.10'",
+    "sys_platform == 'linux' and platform_machine == 'x86_64' and python_version == '3.12'",
+]
 conflicts = [
     [{extra = "onnx-cpu"}, {extra = "onnx-gpu"}, {extra = "ascend"}],
     [{group = "test"}, {extra = "onnx-gpu"}, {extra = "ascend"}],
