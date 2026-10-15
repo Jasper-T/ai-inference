@@ -316,9 +316,9 @@ def download_wire(monkeypatch):
             return sock
 
         monkeypatch.setattr(socket, "create_connection", connect)
-        monkeypatch.setattr(
-            module.ssl, "create_default_context", lambda: SimpleNamespace(wrap_socket=wrap)
-        )
+        context = module.ssl.create_default_context()
+        monkeypatch.setattr(context, "wrap_socket", wrap)
+        monkeypatch.setattr(module.ssl, "create_default_context", lambda: context)
         return wire
 
     return SimpleNamespace(

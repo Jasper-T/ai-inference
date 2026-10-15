@@ -12,6 +12,7 @@ version and release notes. HTTP service changes are identified below.
 ### Fixed
 
 - Require compatible Linux x86_64 wheels for Python 3.10 / 3.12 when locking dependencies; avoid selecting ONNX Runtime releases without Python 3.10 wheels. Run all package acceptance matrix entries even if another fails.
+- Preserve real SSL context attributes in download test doubles so URL deadline regressions also run on Python 3.10.
 
 ## 0.2.1 - 2026-10-15
 
