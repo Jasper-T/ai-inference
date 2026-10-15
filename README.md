@@ -152,7 +152,6 @@ uv build
 - [处理器与扩展](docs/extension.md)：自定义步骤、处理器、Engine 和 Predictor。
 - [日志与性能测量](docs/logging-and-benchmark.md)：日志上下文与 benchmark。
 - [测试与复现](docs/testing.md)：自动化测试、真实模型导出与参考对照。
-- [发布工作流](docs/releases/actions.md)：构建、发布与失败重试。
 
 ## 许可证
 

@@ -10,3 +10,5 @@ global-exclude *.local.yaml *.local.yml
 global-exclude __pycache__ *.py[cod]
 include LICENSE
 recursive-include requirements *.txt
+prune docs/releases
+exclude docs/service/review.md docs/service/release-plan.md

@@ -15,6 +15,10 @@ version and release notes. HTTP service changes are identified below.
 
 - Explicit `onnx-gpu-cu12` (ORT >=1.21,<1.27) and `onnx-gpu-cu13` (ORT >=1.29,<1.32) extras; retain `onnx-gpu` as a compatibility entry point. Document supported Python/platform combinations, ARM64 CUDA 13 requirements and GPU installation checks.
 
+### Changed
+
+- Keep maintainer release plans and review records on the documentation-only `maintainers` branch; remove them from public documentation navigation and source distributions.
+
 ### Fixed
 
 - Gate GitHub Release and PyPI publication on the complete Linux and Windows acceptance workflow.
