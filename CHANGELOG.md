@@ -9,9 +9,17 @@ version and release notes. HTTP service changes are identified below.
 
 ## Unreleased
 
+## 0.2.2 - 2026-10-15
+
+### Added
+
+- Explicit `onnx-gpu-cu12` (ORT >=1.21,<1.27) and `onnx-gpu-cu13` (ORT >=1.29,<1.32) extras; retain `onnx-gpu` as a compatibility entry point. Document supported Python/platform combinations, ARM64 CUDA 13 requirements and GPU installation checks.
+
 ### Fixed
 
-- Require compatible Linux x86_64 wheels for Python 3.10 / 3.12 when locking dependencies; avoid selecting ONNX Runtime releases without Python 3.10 wheels. Run all package acceptance matrix entries even if another fails.
+- Gate GitHub Release and PyPI publication on the complete Linux and Windows acceptance workflow.
+- Require Windows x64 Python 3.10 wheels during dependency locking and validate separate CPU/GPU installations on a native Windows runner; prevent selecting releases without cp310 Windows wheels.
+- Require compatible Linux x86_64 / ARM64 and Windows x64 wheels for Python 3.10–3.12 when locking dependencies; exclude unsupported GPU platform/Python combinations and validate CPU installs on native Linux x86_64 / ARM64 runners. Run all package acceptance matrix entries even if another fails.
 - Preserve real SSL context attributes in download test doubles so URL deadline regressions also run on Python 3.10.
 
 ## 0.2.1 - 2026-10-15

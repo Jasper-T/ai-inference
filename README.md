@@ -6,43 +6,44 @@
 
 ## 安装
 
-Python >= 3.10。项目使用 [uv](https://docs.astral.sh/uv/) 管理依赖、环境、测试和构建。先安装 uv，再从仓库根目录运行：
+Python ≥3.10。当前版本为 **0.2.2**，变更见 [CHANGELOG](CHANGELOG.md)。以下命令用于 `0.2.2` 发行版；发布前可先[从源码安装](#开发与验证)。
+
+选择一个推理后端，在独立虚拟环境中安装：
 
 ```bash
-# 开发环境：SDK、CPU ONNX Runtime、pytest、ONNX 和 Ruff
-uv sync --locked
+# CPU，包括 macOS
+python -m pip install 'ai-inference[onnx-cpu]==0.2.2'
 
-# CPU 运行环境，包括 macOS
-uv sync --locked --no-default-groups --extra onnx-cpu
+# NVIDIA CUDA ≥12.8 / cuDNN 9，Linux x86_64 或 Windows x64
+python -m pip install 'ai-inference[onnx-gpu-cu12]==0.2.2'
 
-# NVIDIA Linux / Windows 运行环境
-uv sync --locked --no-default-groups --extra onnx-gpu
-
-# Ascend Linux 运行环境，CANN、驱动和设备环境须单独准备
-uv sync --locked --python 3.12 --no-default-groups --extra ascend
-uv pip install --python .venv/bin/python -r requirements/ascend.txt
+# NVIDIA CUDA ≥13.0 / cuDNN 9，Python ≥3.11
+# Linux x86_64 / ARM64 或 Windows x64
+python -m pip install 'ai-inference[onnx-gpu-cu13]==0.2.2'
 ```
 
-需要 HTTP 服务时可组合安装：
+**Linux ARM64（aarch64）的 NVIDIA GPU 环境需要 CUDA ≥13.0、cuDNN 9、Python ≥3.11 和 glibc ≥2.34。** Python 3.10 或 CUDA 12 的 ARM64 环境需要设备厂商提供的兼容运行时或自行构建。Jetson 还需核对 JetPack、驱动和 GPU 型号；ARM64 wheel 本身不保证设备兼容。
+
+GPU extra 不会检测本机 CUDA，也不安装 NVIDIA 驱动或系统 CUDA/cuDNN。不支持的 Python/平台组合可能跳过 GPU 依赖；安装成功后仍须验证真实 CUDA 推理。详细要求见 [CUDA 部署说明](docs/configuration.md#cuda-部署与失败)。旧 `onnx-gpu` 保留为兼容入口，新部署建议选择明确的 CUDA 系列。请只安装一个后端，不要混装 CPU 和 GPU 运行时。
+
+需要 HTTP 服务时，组合 `service` 与所选后端：
 
 ```bash
-pip install './ai_inference-0.2.1-py3-none-any.whl[service,onnx-cpu]'
-# 在本仓库安装 CPU 服务运行环境
-uv sync --locked --no-default-groups --extra service --extra onnx-cpu
+python -m pip install 'ai-inference[service,onnx-cpu]==0.2.2'
+# GPU 服务也可组合 service,onnx-gpu-cu12 或 service,onnx-gpu-cu13
 ```
 
-`0.2.1` 包含 `service` extra。上面的 wheel 命令在从 GitHub Release 下载制品后执行；新版本标签推送会发布 GitHub Release 并上传 PyPI，手动运行时也可选择仅 GitHub Release、TestPyPI 或 PyPI（需先配置 Trusted Publishing，见[发布说明](docs/releases/actions.md#通过-actions-上传-pypi)）。包名安装要求对应版本存在于所用包索引。基础安装不引入 FastAPI/Uvicorn，服务代码包含在统一 wheel 中。
+基础安装不引入 FastAPI/Uvicorn，`service` extra 安装 HTTP 依赖。启动方法见 [HTTP 服务](docs/service/README.md)。
 
-三个后端 extras 互斥。默认 dev/test 组包含 CPU ONNX Runtime，GPU / Ascend 环境须关闭默认组。切换后端建议使用独立环境。`ascend` 是空的兼容 extra，不再安装厂商运行时。独立的 `requirements/ascend.txt` 按 Linux x86_64 / aarch64、CPython 3.10–3.12 选择官方 ACLRuntime / ais_bench 0.0.2 wheel；仅在这些环境执行，其他环境需自行准备兼容运行时。此文件中的平台条件在不支持的环境会跳过所有条目，并不表示该环境支持 Ascend。
-
-当前版本为 **0.2.1**，变更和迁移说明见 [CHANGELOG](CHANGELOG.md)。发行工作流通过 [GitHub Releases](https://github.com/Jasper-T/ai-inference/releases) 提供 wheel、源码包及 `SHA256SUMS`；取得 wheel 并核对哈希后安装：
+Ascend 需要自行准备 CANN、驱动和设备环境，并安装 SDK 与独立的厂商依赖：
 
 ```bash
-uv venv --python 3.12
-uv pip install './ai_inference-0.2.1-py3-none-any.whl[onnx-cpu]'
+python -m pip install 'ai-inference==0.2.2'
+# 从对应版本源码取得 requirements/ascend.txt 后执行
+python -m pip install -r requirements/ascend.txt
 ```
 
-GPU 使用 `[onnx-gpu]`。Ascend 安装基础 wheel 后，还须从同版本源码包取得 `requirements/ascend.txt`，执行 `uv pip install -r requirements/ascend.txt`（或 `python -m pip install -r requirements/ascend.txt`）。GPU 运行时必须与 NVIDIA 驱动、CUDA、cuDNN 兼容，见 [CUDA 部署说明](docs/configuration.md#cuda-部署与失败)。
+[Ascend 依赖文件](requirements/ascend.txt) 支持 Linux x86_64 / aarch64、CPython 3.10–3.12；其他环境需自行准备兼容运行时。`ascend` 保留为空的兼容 extra。模型文件不随包分发，示例 YAML 见 [configs](configs)，权重准备见 [模型下载](docs/model-downloads.md)。
 
 ## 检测调用
 
@@ -127,6 +128,8 @@ uv run --locked python scripts/predict_all.py --image tests/bus.jpg --results re
 SFace 使用 YuNet 检测的五点；没有有效人脸时输出 `not_run` 状态。最小调用见 [examples](examples/README.md)，完整场景工具见 [scripts](scripts/README.md)。
 
 ## 开发与验证
+
+从仓库根目录使用 [uv](https://docs.astral.sh/uv/) 安装源码和开发依赖。默认开发组包含 CPU ONNX Runtime；GPU / Ascend 环境使用 `--no-default-groups` 并只选择对应后端 extra，具体命令见 [运行环境配置](docs/configuration.md#cuda-部署与失败)。
 
 ```bash
 uv sync --locked --extra service

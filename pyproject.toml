@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai-inference"
-version = "0.2.1"
+version = "0.2.2"
 description = "Pipeline-based model inference SDK with a transport-independent engine boundary"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -35,7 +35,15 @@ onnx-cpu = [
     "onnxruntime>=1.18,<2",
 ]
 onnx-gpu = [
-    "onnxruntime-gpu>=1.18,<2; platform_system == 'Linux' or platform_system == 'Windows'",
+    "onnxruntime-gpu>=1.18,<2; (sys_platform == 'linux' and (platform_machine == 'x86_64' or (platform_machine == 'aarch64' and python_version >= '3.11'))) or (sys_platform == 'win32' and platform_machine == 'AMD64')",
+]
+
+# Explicit CUDA families. Unsupported platform/Python combinations skip these requirements.
+onnx-gpu-cu12 = [
+    "onnxruntime-gpu>=1.21,<1.27; (sys_platform == 'linux' and platform_machine == 'x86_64') or (sys_platform == 'win32' and platform_machine == 'AMD64')",
+]
+onnx-gpu-cu13 = [
+    "onnxruntime-gpu>=1.29,<1.32; python_version >= '3.11' and ((sys_platform == 'linux' and (platform_machine == 'x86_64' or platform_machine == 'aarch64')) or (sys_platform == 'win32' and platform_machine == 'AMD64'))",
 ]
 
 # Compatibility extra; install vendor wheels separately from requirements/ascend.txt.
@@ -57,11 +65,18 @@ dev = [
 [tool.uv]
 required-environments = [
     "sys_platform == 'linux' and platform_machine == 'x86_64' and python_version == '3.10'",
+    "sys_platform == 'linux' and platform_machine == 'x86_64' and python_version == '3.11'",
     "sys_platform == 'linux' and platform_machine == 'x86_64' and python_version == '3.12'",
+    "sys_platform == 'linux' and platform_machine == 'aarch64' and python_version == '3.10'",
+    "sys_platform == 'linux' and platform_machine == 'aarch64' and python_version == '3.11'",
+    "sys_platform == 'linux' and platform_machine == 'aarch64' and python_version == '3.12'",
+    "sys_platform == 'win32' and platform_machine == 'AMD64' and python_version == '3.10'",
+    "sys_platform == 'win32' and platform_machine == 'AMD64' and python_version == '3.11'",
+    "sys_platform == 'win32' and platform_machine == 'AMD64' and python_version == '3.12'",
 ]
 conflicts = [
-    [{extra = "onnx-cpu"}, {extra = "onnx-gpu"}, {extra = "ascend"}],
-    [{group = "test"}, {extra = "onnx-gpu"}, {extra = "ascend"}],
+    [{extra = "onnx-cpu"}, {extra = "onnx-gpu"}, {extra = "onnx-gpu-cu12"}, {extra = "onnx-gpu-cu13"}, {extra = "ascend"}],
+    [{group = "test"}, {extra = "onnx-gpu"}, {extra = "onnx-gpu-cu12"}, {extra = "onnx-gpu-cu13"}, {extra = "ascend"}],
 ]
 
 [tool.setuptools.packages.find]

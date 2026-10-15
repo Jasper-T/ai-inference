@@ -1,20 +1,32 @@
 name: Package acceptance
 
-on: [push, pull_request, workflow_dispatch]
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: Exact source ref to validate for a release
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 jobs:
   package:
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
-        python: ['3.10', '3.12']
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+        python: ['3.10', '3.11', '3.12']
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          ref: ${{ inputs.ref }}
           persist-credentials: false
       - uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
         with:
@@ -33,3 +45,39 @@ jobs:
         run: |
           uv run --locked --no-sync twine check --strict dist/*.whl dist/*.tar.gz
           uv run --locked --no-sync python scripts/check_dist.py dist
+
+  windows-runtime:
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python: '3.10'
+            extra: onnx-gpu
+          - python: '3.10'
+            extra: onnx-gpu-cu12
+          - python: '3.11'
+            extra: onnx-gpu-cu13
+          - python: '3.12'
+            extra: onnx-gpu-cu13
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
+        with:
+          version: '0.12.5'
+          python-version: ${{ matrix.python }}
+          enable-cache: false
+      - name: Validate locked CPU installation
+        run: |
+          uv sync --locked --extra service
+          uv run --locked --no-sync python -c "import onnxruntime; from ai_inference.service.app import app; assert app.openapi()['paths']; print(onnxruntime.__version__)"
+      - name: Validate locked GPU package installation without CPU package
+        env:
+          GPU_EXTRA: ${{ matrix.extra }}
+        run: |
+          uv sync --locked --no-default-groups --extra service --extra "$env:GPU_EXTRA"
+          uv pip check
+          uv run --locked --no-sync --no-default-groups --extra service --extra "$env:GPU_EXTRA" python -c "from importlib.metadata import distributions, version; import onnxruntime as ort; from ai_inference.service.app import app; assert 'onnxruntime' not in {d.metadata['Name'].lower() for d in distributions()}; assert 'CUDAExecutionProvider' in ort.get_available_providers(); assert app.openapi()['paths']; print(version('onnxruntime-gpu'))"

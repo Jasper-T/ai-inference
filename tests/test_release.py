@@ -201,6 +201,118 @@ def test_bad_uploaded_bytes_keep_draft(monkeypatch, bundle):
     assert not any(c[:2] == ("release", "edit") for c in calls)
 
 
+@pytest.mark.parametrize(
+    "extra,python,platform,arch,wheel_platform",
+    [
+        (extra, python, platform, arch, wheel_platform)
+        for extra in ("onnx-cpu", "onnx-gpu", "onnx-gpu-cu12", "onnx-gpu-cu13")
+        for python in ("3.10", "3.11", "3.12")
+        for platform, arch, wheel_platform in (
+            ("win32", "AMD64", "win_amd64"),
+            ("linux", "x86_64", "x86_64"),
+            ("linux", "aarch64", "aarch64"),
+        )
+        if not (extra == "onnx-gpu-cu13" and python == "3.10")
+        and not (extra == "onnx-gpu-cu12" and arch == "aarch64")
+        and not (extra == "onnx-gpu" and arch == "aarch64" and python == "3.10")
+    ],
+)
+def test_locked_runtime_has_supported_wheel(extra, python, platform, arch, wheel_platform):
+    from packaging.markers import Marker
+    from packaging.utils import parse_wheel_filename
+
+    root = Path(__file__).resolve().parents[1]
+    lock = release.tomllib.loads((root / "uv.lock").read_text())
+    project = next(p for p in lock["package"] if p["name"] == "ai-inference")
+    environment = {
+        "sys_platform": platform,
+        "platform_machine": arch,
+        "platform_system": "Windows" if platform == "win32" else "Linux",
+        "os_name": "nt" if platform == "win32" else "posix",
+        "python_version": python,
+        "python_full_version": python + ".1",
+        "extra": "extra-12-ai-inference-" + extra,
+    }
+    selected = [
+        dep
+        for dep in project["optional-dependencies"][extra]
+        if not dep.get("marker") or Marker(dep["marker"]).evaluate(environment)
+    ]
+    assert len(selected) == 1
+    dependency = selected[0]
+    package = next(
+        p
+        for p in lock["package"]
+        if p["name"] == dependency["name"] and p["version"] == dependency["version"]
+    )
+    assert any(
+        tag.interpreter == "cp" + python.replace(".", "")
+        and (
+            tag.platform == wheel_platform
+            if platform == "win32"
+            else tag.platform.startswith("manylinux_")
+            and tag.platform.endswith("_" + wheel_platform)
+        )
+        for wheel in package["wheels"]
+        for tag in parse_wheel_filename(wheel["url"].rsplit("/", 1)[-1])[3]
+    )
+
+
+def test_release_requires_acceptance_of_selected_tag():
+    import yaml
+
+    root = Path(__file__).resolve().parents[1]
+    workflow = yaml.safe_load((root / ".github/workflows/release.yml").read_text())
+    jobs = workflow["jobs"]
+    assert "acceptance" in jobs["publish"]["needs"]
+    assert "publish" in jobs["publish-index"]["needs"]
+    assert jobs["acceptance"]["uses"] == "./.github/workflows/package.yml"
+    assert jobs["acceptance"]["with"]["ref"].startswith("refs/tags/")
+    package = yaml.safe_load((root / ".github/workflows/package.yml").read_text())
+    for job in package["jobs"].values():
+        checkout = next(
+            s for s in job["steps"] if s.get("uses", "").startswith("actions/checkout@")
+        )
+        assert checkout["with"]["ref"] == "${{ inputs.ref }}"
+
+
+@pytest.mark.parametrize(
+    "extra,python,platform,arch,selected",
+    [
+        ("onnx-gpu-cu12", "3.10", "win32", "AMD64", True),
+        ("onnx-gpu-cu12", "3.12", "linux", "x86_64", True),
+        ("onnx-gpu-cu12", "3.12", "linux", "aarch64", False),
+        ("onnx-gpu-cu13", "3.10", "linux", "aarch64", False),
+        ("onnx-gpu-cu13", "3.10", "win32", "AMD64", False),
+        ("onnx-gpu-cu13", "3.11", "linux", "aarch64", True),
+        ("onnx-gpu-cu13", "3.12", "linux", "aarch64", True),
+        ("onnx-gpu-cu13", "3.12", "win32", "AMD64", True),
+        ("onnx-gpu-cu13", "3.12", "darwin", "arm64", False),
+    ],
+)
+def test_cuda_extra_platform_selection(extra, python, platform, arch, selected):
+    from packaging.requirements import Requirement
+
+    root = Path(__file__).resolve().parents[1]
+    extras = release.tomllib.loads((root / "pyproject.toml").read_text())["project"][
+        "optional-dependencies"
+    ]
+    requirement = Requirement(extras[extra][0])
+    assert (
+        requirement.marker.evaluate(
+            {"python_version": python, "sys_platform": platform, "platform_machine": arch}
+        )
+        is selected
+    )
+    if extra == "onnx-gpu-cu12":
+        assert "1.23.2" in requirement.specifier
+        assert "1.29.0" not in requirement.specifier
+    else:
+        assert "1.23.2" not in requirement.specifier
+        assert "1.31.0" in requirement.specifier
+        assert "1.32.0" not in requirement.specifier
+
+
 @pytest.mark.parametrize("python", ["3.10", "3.11", "3.12"])
 @pytest.mark.parametrize("arch", ["aarch64", "x86_64"])
 def test_ascend_wheel_selection(python, arch):
@@ -210,7 +322,14 @@ def test_ascend_wheel_selection(python, arch):
     extras = release.tomllib.loads((root / "pyproject.toml").read_text())["project"][
         "optional-dependencies"
     ]
-    assert set(extras) == {"service", "onnx-cpu", "onnx-gpu", "ascend"}
+    assert set(extras) == {
+        "service",
+        "onnx-cpu",
+        "onnx-gpu",
+        "onnx-gpu-cu12",
+        "onnx-gpu-cu13",
+        "ascend",
+    }
     assert extras["ascend"] == []
     environment = {
         "sys_platform": "linux",

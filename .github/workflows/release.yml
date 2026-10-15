@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing version tag (e.g. v0.2.1)
+        description: Existing version tag (e.g. v0.2.2)
         required: true
         type: string
       publish_to:
@@ -27,6 +27,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  acceptance:
+    uses: ./.github/workflows/package.yml
+    with:
+      ref: refs/tags/${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
   verify:
     runs-on: ubuntu-24.04
     outputs:
@@ -83,7 +88,8 @@ jobs:
           uv run --locked --no-sync ruff check ../tooling/scripts/release.py ../tooling/tests/test_release.py
           uv run --locked --no-sync ruff format --check ../tooling/scripts/release.py ../tooling/tests/test_release.py
           uv run --locked --no-sync python -m pytest -q ../tooling/tests/test_release.py
-          export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+          SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+          export SOURCE_DATE_EPOCH
           uv build --build-constraint ../tooling/.github/build-constraints.txt
           if [ -f scripts/check_dist.py ]; then
             uv run --locked --no-sync twine check --strict dist/*.whl dist/*.tar.gz
@@ -102,7 +108,7 @@ jobs:
           retention-days: 7
 
   publish:
-    needs: verify
+    needs: [verify, acceptance]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

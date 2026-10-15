@@ -99,7 +99,41 @@ runtime:
 
 ## CUDA 部署与失败
 
-GPU 环境使用 `uv sync --locked --no-default-groups --extra onnx-gpu`，避免与默认测试组的 CPU ORT 混装。实际 ORT 版本见 `uv.lock`，CUDA、cuDNN 与 NVIDIA 驱动必须按该版本的 [官方兼容表](https://onnxruntime.ai/docs/execution-providers/CUDA-ExecutionProvider.html) 准备，不能从 `onnx-gpu` extra 的宽版本范围推断兼容性。
+`0.2.2` 提供以下选择，当前待发布；旧版 `0.2.1` 的 PyPI 发行已删除，发布前请从仓库源码安装：
+
+| Extra | ORT 范围 | 环境要求 |
+| --- | --- | --- |
+| `onnx-gpu-cu12` | `>=1.21,<1.27` | CUDA ≥12.8、cuDNN 9；Linux x86_64 / Windows x64，Python ≥3.10 |
+| `onnx-gpu-cu13` | `>=1.29,<1.32` | CUDA ≥13.0、cuDNN 9；Linux x86_64 / aarch64、Windows x64，Python ≥3.11；Linux aarch64 还要求 glibc ≥2.34 |
+| `onnx-gpu` | `>=1.18,<2` | 保留旧安装入口；不保证与本机 CUDA 系列匹配，需自行约束 ORT 版本 |
+
+CUDA 与 cuDNN 要求依据 [官方兼容表](https://onnxruntime.ai/docs/execution-providers/CUDA-ExecutionProvider.html)。边界版本变化需要重新验收后调整范围，不自动扩展到未来 CUDA 系列。
+
+在仓库中使用 `uv sync --locked --no-default-groups --extra onnx-gpu-cu12` 或 `uv sync --locked --python 3.12 --no-default-groups --extra onnx-gpu-cu13`，避免与默认测试组的 CPU ORT 混装。实际 ORT 版本见 `uv.lock`；显卡驱动、CUDA 和 cuDNN 仍须自行准备。pip 安装源码时可使用 `python -m pip install '.[onnx-gpu-cu13]'`，服务环境组合为 `'.[service,onnx-gpu-cu13]'`。
+
+extras 使用 Python/平台条件排除不支持的组合。比如 ARM64 上选择 cu12、Python 3.10 上选择 cu13、macOS 上选择任一 CUDA extra，安装工具可能跳过 GPU 依赖并成功退出；这不代表该环境支持 GPU。先核对上表，再检查 ORT 是否实际安装，并执行严格 CUDA 模型推理。CPU、cu12、cu13、旧 `onnx-gpu`、Ascend 在 uv 中互斥；pip 不强制该互斥，不要组合安装。
+
+### Linux ARM64 GPU 安装
+
+`0.2.2` 的 Linux ARM64 环境使用 `onnx-gpu-cu13`（旧 `onnx-gpu` 仅保留为兼容入口）；与 x86_64 的运行时要求不同。截至 2026-10-15，PyPI 上的 `onnxruntime-gpu` 从 1.29.0 开始提供 Linux aarch64 wheel；当前 1.31.0 的 ARM64 wheel 要求 CPython ≥3.11、glibc ≥2.34，GPU 运行需要 CUDA ≥13.0、cuDNN 9 和兼容的 NVIDIA 驱动。文件标签见 [PyPI 发行文件](https://pypi.org/project/onnxruntime-gpu/1.31.0/#files)，CUDA 与 cuDNN 要求见上面的官方兼容表。
+
+ARM64 的 Python 3.10 或 CUDA 12 环境不能直接使用这些 PyPI GPU wheel；需要匹配设备的厂商构建或自行编译，不能用 CPU 包代替 GPU 包。Jetson 须另外核对 JetPack、驱动、CUDA/cuDNN 和 GPU 型号，wheel 的 aarch64 标签本身不保证设备兼容。macOS ARM64 不使用 NVIDIA CUDA extra，应使用 `onnx-cpu`。
+
+在已准备好上述系统环境的 Linux ARM64 设备上安装：
+
+```bash
+# 待 0.2.2 发布到 PyPI 后，安装 SDK 与 CUDA 13 GPU 运行时
+uv venv --python 3.12
+uv pip install --python .venv/bin/python 'ai-inference[onnx-gpu-cu13]==0.2.2'
+
+# 或在本仓库明确选择 CUDA 13 环境（0.2.2 extra）
+uv sync --locked --python 3.12 --no-default-groups --extra onnx-gpu-cu13
+
+# 查看实际 ORT 版本与已编译的 providers
+.venv/bin/python -c 'import onnxruntime as ort; print(ort.__version__); print(ort.get_available_providers())'
+```
+
+`onnx-gpu` 不自动检测本机 CUDA，也不安装 NVIDIA 驱动或系统 CUDA/cuDNN。`get_available_providers()` 包含 `CUDAExecutionProvider` 只表示该包编译了 CUDA 支持；还必须在模型 YAML 中设置 `runtime.options.providers: cuda`，执行真实模型推理，确认动态库能加载、会话可初始化且设备能运行。普通 CPU CI 的安装验收不代表 GPU 实机验证通过。
 
 OpenCV 前后处理仍在 CPU 执行。目标设备应单独验证 provider 初始化、真实权重 warmup、显存、延迟和结果一致性；provider 降级及执行失败行为见上文“执行设备”。
 

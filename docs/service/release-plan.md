@@ -1,10 +1,10 @@
-# v0.2.1 统一发布与验收流程
+# v0.2.2 统一发布与验收流程
 
 SDK 与 HTTP 服务使用同一个 `ai-inference` 发行包、版本、`vMAJOR.MINOR.PATCH` tag 和根目录 [CHANGELOG](../../CHANGELOG.md)。服务位于 `src/ai_inference/service/`，`service` extra 只控制 HTTP 依赖安装，代码随统一 wheel 发布。基础 SDK 导入不加载 HTTP 依赖。
 
-本轮发布版本为 `0.2.1`，包含 Ascend 厂商 wheel 独立安装、MIT 许可证、发行包验收和 GitHub Actions Trusted Publishing 配置。`pyproject.toml`、公开 `__version__` 与新标签 `v0.2.1` 必须一致；保留已有 `v0.2.0` 标签和历史记录，不移动或重新发布旧标签。
+本轮发布版本为 `0.2.2`，新增 CUDA 12/13 extras、修复 Linux/Windows Python 3.10 的 ORT 锁文件选择及 SSL 测试兼容性，并补充 ARM64 GPU 安装指南和 Windows 原生安装验收。`pyproject.toml`、公开 `__version__` 与新标签 `v0.2.2` 必须一致；保留已有 `v0.2.0` / `v0.2.1` 标签和历史记录，不移动或重新发布旧标签。
 
-根 CHANGELOG 的 `0.2.1` 章节记录本轮变更，日期为 2026-10-15；`0.2.0` 保留 SDK 与 HTTP 服务统一发行及服务边界修复的历史。按下列顺序完成本地验收、提交和打标签，并以 GitHub Actions 的完成状态及发布附件为准。
+根 CHANGELOG 的 `0.2.2` 章节记录本轮变更，日期为 2026-10-15；`0.2.1` 保留 PyPI 打包、MIT 许可及 Trusted Publishing 的历史，`0.2.0` 保留 SDK 与 HTTP 服务统一发行及服务边界修复的历史。按下列顺序完成本地验收、提交和打标签，并以 GitHub Actions 的完成状态及发布附件为准。
 
 ## 执行顺序与完成标准
 
@@ -12,10 +12,10 @@ SDK 与 HTTP 服务使用同一个 `ai-inference` 发行包、版本、`vMAJOR.M
 | --- | --- | --- |
 | 1 | 修复下载时间预算 | 连接、TLS、响应头与响应体读取受剩余预算约束；慢分块头和 `Connection: close` 场景有回归；超时返回 504 后正常恢复准入，不留下继续下载的后台任务 |
 | 2 | 修复模型相关输入校验 | 不支持关键点的模型拒绝关键点；SFace 缺失或退化五点、错误的已对齐裁剪返回带图片索引的 422；整批拒绝且模型故障仍保留 500 |
-| 3 | 整理本轮发布文档 | 把已完成的 `Unreleased` 内容归入 `0.2.1` 章节，保留 `0.2.0` 历史；同步版本、安装示例、许可证与 Ascend 安装迁移说明 |
+| 3 | 整理本轮发布文档 | 把已完成的 `Unreleased` 内容归入 `0.2.2` 章节，保留 `0.2.0` / `0.2.1` 历史；同步版本、安装示例、许可证与 Ascend 安装迁移说明 |
 | 4 | 完成回归和安装验收 | 全套 SDK/服务测试、smoke、Ruff、锁文件与发布工具检查通过；基础安装不依赖 HTTP；wheel/sdist 安装后在仓库外验证组合 extras、启动及接口 |
 | 5 | 提交到 main | 修复、测试和文档全部提交并推送；工作区干净，本地 main 与远程一致；不需要再次重写主线历史 |
-| 6 | 创建并推送新标签 | 确认远程 `v0.2.1` 不存在，创建指向上述验收提交的 annotated tag，再推送标签触发自动发布 |
+| 6 | 创建并推送新标签 | 确认远程 `v0.2.2` 不存在，创建指向上述验收提交的 annotated tag，再推送标签触发自动发布 |
 | 7 | 检查发布结果 | GitHub Actions 验证和发布 job 成功；Release 正文包含 SDK 与服务完整变更；wheel、sdist 和 SHA256SUMS 齐全，下载后按哈希核对 |
 
 阶段 1–4 通过后才执行阶段 5–7。服务边界修复已包含在 `0.2.0`；本轮继续执行对应回归，并验证新增发行包检查，不把历史测试结果当作新版本验收结果。CPU 验收与 GPU/Ascend 实机验收分别表述，不把 OM 模拟测试列为实际设备验证。
@@ -26,22 +26,22 @@ SDK 与 HTTP 服务使用同一个 `ai-inference` 发行包、版本、`vMAJOR.M
 
 ## 标签与工作流操作
 
-已有 `v0.2.0` 不含本轮 PyPI 修复，保留其历史，不将其作为本轮上传入口。不要在阶段 1–5 完成前使用 `Run workflow` 输入 `v0.2.1`。
+已有 `v0.2.0` / `v0.2.1` 不含本轮 CUDA extras 和锁文件修复，保留其历史，不将其作为本轮上传入口。不要在阶段 1–5 完成前使用 `Run workflow` 输入 `v0.2.2`。
 
 以下命令仅在修复、验收和 main 推送完成后执行：
 
 ```bash
-git ls-remote --tags origin refs/tags/v0.2.1
+git ls-remote --tags origin refs/tags/v0.2.2
 # 上一步确认没有该标签，再创建并推送。
-git tag -a v0.2.1 -m "Release v0.2.1"
-git push origin v0.2.1
+git tag -a v0.2.2 -m "Release v0.2.2"
+git push origin v0.2.2
 ```
 
 标签推送会触发构建并正式发布，不是单纯保存版本标记。发布失败先查看日志：若只是依赖下载等临时失败且源码未变，可以重跑同一任务；若必须修改源码，应使用后续版本号重新验收并创建新标签，不能把已经验收或已发布的标签静默移到其他提交。
 
 ## 安装与迁移
 
-本轮 `0.2.1` 提供 `service` 与后端组合的 extras。取得新 wheel 后可执行 `pip install './ai_inference-0.2.1-py3-none-any.whl[service,onnx-cpu]'`。GPU 使用 `service,onnx-gpu`。`ascend` 保留为空的兼容 extra，厂商运行时须从同版本源码包的 `requirements/ascend.txt` 单独安装，CANN 与驱动仍须另行准备；三个后端 extras 在 uv 中仍互斥。HTTP 依赖可与后端独立选择。
+本轮 `0.2.2` 提供 `service` 与后端组合的 extras。取得新 wheel 后可执行 `pip install './ai_inference-0.2.2-py3-none-any.whl[service,onnx-cpu]'`。GPU 使用 `service,onnx-gpu-cu12` 或 `service,onnx-gpu-cu13`，按 CUDA 系列选择；旧 `onnx-gpu` 保留为兼容入口。`ascend` 保留为空的兼容 extra，厂商运行时须从同版本源码包的 `requirements/ascend.txt` 单独安装，CANN 与驱动仍须另行准备；CPU、三个 GPU extras 与 Ascend 在 uv 中互斥。HTTP 依赖可与后端独立选择。
 
 本地开发和 CI 使用：
 
@@ -88,7 +88,7 @@ uv build --out-dir /tmp/ai-inference-candidate-dist --build-constraint .github/b
 
 正式工作流在新的 checkout 中向 `dist/` 构建，由 `scripts/release.py` 检查 wheel/sdist 并生成 `SHA256SUMS`。服务模块与测试已允许进入统一源码包，构建副本、权重和字节码仍被拒绝。工作流检查被选 tag 是否声明 `service` extra：新 tag 验证完整 SDK/服务，旧 tag 按其自身依赖和源码验证，支持历史 SDK 补发。
 
-从候选 wheel 在仓库外安装，确认 `ai_inference.service` 来自安装环境。用固定样本检查 readiness、model 信息和四种接口。发布制品仍为统一 wheel、sdist 和 `SHA256SUMS`；先草稿、上传校验，再公开，不能静默覆盖同版本已发布制品。本轮新建 `v0.2.1`，保留 `v0.2.0`；后续变更继续按新版本号演进。PyPI 上传复用同一次运行的制品，须先完成 Trusted Publishing 配置。
+从候选 wheel 在仓库外安装，确认 `ai_inference.service` 来自安装环境。用固定样本检查 readiness、model 信息和四种接口。发布制品仍为统一 wheel、sdist 和 `SHA256SUMS`；先草稿、上传校验，再公开，不能静默覆盖同版本已发布制品。本轮新建 `v0.2.2`，保留 `v0.2.0` / `v0.2.1`；后续变更继续按新版本号演进。PyPI 上传复用同一次运行的制品，须先完成 Trusted Publishing 配置。
 
 ## 灰度与回滚
 
