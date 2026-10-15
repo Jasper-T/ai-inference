@@ -18,7 +18,7 @@ AI_INFERENCE_MODEL_CONFIG=configs/yolo11.yaml \
 
 服务代码位于 `src/ai_inference/service/`，随 `ai-inference` 统一发行。`service` extra 安装 FastAPI、Uvicorn 和 multipart 依赖，可与任一后端 extra 组合。环境变量中的配置路径相对进程工作目录，YAML 内的权重路径仍相对 YAML 目录。
 
-发行版安装使用 `pip install 'ai-inference[service,onnx-cpu]'`；此前的 `0.2.0` 制品尚无 `service` extra，须使用包含本次迁移的新版本。安装后可从其他目录运行 `uvicorn ai_inference.service.app:app`，部署时建议使用绝对配置路径。纯 SDK 使用者无需安装 `service` extra，基础导入不加载 HTTP 框架。
+`0.2.0` 包含可选 HTTP 服务。取得 GitHub Release 的 wheel 后，使用 `pip install './ai_inference-0.2.0-py3-none-any.whl[service,onnx-cpu]'` 安装；本地开发使用上面的源码安装方式。若对应制品已上传所用包索引，也可使用 `pip install 'ai-inference[service,onnx-cpu]'`。安装后可从其他目录运行 `uvicorn ai_inference.service.app:app`，部署时建议使用绝对配置路径。纯 SDK 使用者无需安装 `service` extra，基础导入不加载 HTTP 框架。
 
 启动阶段加载模型，按模型 YAML 的 `runtime.warmup` 设置预热；加载失败则启动失败。不要使用多个 worker 扩容同一设备：每个 worker 都会独立加载模型。单进程只接纳一个推理请求，包含输入解析、下载、解码、推理和响应发送；忙时立即返回 503，不排队。健康检查不等待推理。推理在工作线程执行，SDK 当前没有统一的显式 `close()` 接口，停止时释放服务持有的模型引用，设备资源最终由进程退出回收。
 
@@ -93,7 +93,7 @@ Python 调用示例见 [examples/service.py](../../examples/service.py)，支持
 
 bytes 的请求体保留为图片字节，因此关键点通过查询参数传入。若希望图片和关键点都在请求体内，使用 Base64、URL 或 multipart 接口。
 
-缺少五点、点数错误或非有限坐标返回 422。当前退化五点仍可能返回 500，已列为[发布前修复项](review.md#p2客户端关键点错误返回模型故障-500)。已对齐输入不传关键点时须是 112×112 裁剪；传入关键点则仍执行对齐。
+缺少五点、点数错误、非有限或退化坐标返回 422。不支持人脸对齐的模型收到关键点也会返回 422。已对齐输入不传关键点时须是 112×112 裁剪；传入有效关键点则仍执行对齐。逐图运行时校验错误附带输入索引，整批拒绝后才可继续提交新请求。
 
 ## 输入限制与 URL
 
@@ -108,7 +108,7 @@ bytes 的请求体保留为图片字节，因此关键点通过查询参数传�
 | `MAX_IMAGE_PIXELS` | 16000000 | 单张图片像素上限，在展开像素前校验 |
 | `MAX_BATCH_PIXELS` | 32000000 | 一次请求总像素上限 |
 | `MAX_BATCH_SIZE` | 8 | 一次请求最大图片数 |
-| `URL_TIMEOUT_SECONDS` | 10 | 网络操作超时及下载循环时间预算 |
+| `URL_TIMEOUT_SECONDS` | 10 | DNS 解析后的网络总预算，覆盖连接、TLS、响应头和响应体 |
 
 URL 仅允许标准端口的公网 HTTP/HTTPS。拒绝凭据、内网/回环/链路本地地址、IPv4 映射或隧道 IPv6 地址，以及混合公网和私网 DNS 结果。连接固定到已检查 IP，HTTPS 保留原域名进行证书校验；不使用环境代理、不跟随重定向、不解压 HTTP Content-Encoding。远端须返回 200，实际下载字节也受限制。DNS 查询耗时由操作系统解析器控制，网络超时不构成整个 HTTP 请求的硬截止时间；推理不设置伪取消超时。
 

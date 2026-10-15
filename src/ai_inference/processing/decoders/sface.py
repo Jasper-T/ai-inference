@@ -27,8 +27,8 @@ class Options(Section):
     dimensions: int = Field(default=128, gt=0, strict=True)
 
 
-def align_face(image, keypoints):
-    image_list(image)
+def alignment_matrix(keypoints):
+    """Validate five landmarks and return the similarity transform without warping."""
     source = np.asarray(keypoints, dtype=np.float64)
     if source.shape != (5, 2) or not np.isfinite(source).all():
         raise ValueError("SFace requires five finite xy landmarks in YuNet order")
@@ -43,11 +43,19 @@ def align_face(image, keypoints):
     scale = np.sum(s * sign) / variance
     if not np.isfinite(scale) or scale <= 0:
         raise ValueError("invalid face alignment scale")
-    matrix = np.column_stack(
+    return np.column_stack(
         (scale * rotation, TARGET_POINTS.mean(0) - scale * rotation @ source.mean(0))
     )
+
+
+def align_face(image, keypoints):
+    image_list(image)
     return cv2.warpAffine(
-        image, matrix, (112, 112), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT
+        image,
+        alignment_matrix(keypoints),
+        (112, 112),
+        flags=cv2.INTER_LINEAR,
+        borderMode=cv2.BORDER_CONSTANT,
     )
 
 

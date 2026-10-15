@@ -6,6 +6,7 @@ from threading import Lock
 import numpy as np
 
 from ai_inference import FaceInput, FeaturePrediction, Model, Prediction
+from ai_inference.processing.decoders.sface import alignment_matrix
 
 from .inputs import InputError, decode_image
 from .schemas import ImageMetadata, PredictionResponse, PredictResponse
@@ -23,6 +24,9 @@ class Runtime:
             "face_align" in step and not step["face_align"].get("aligned_input", False)
             for step in self.model.config.preprocess["steps"]
         )
+        self.accepts_keypoints = any(
+            "face_align" in step for step in self.model.config.preprocess["steps"]
+        )
         self.lock = Lock()
 
     def predict(
@@ -37,7 +41,21 @@ class Runtime:
             try:
                 if self.requires_keypoints and info.keypoints is None:
                     raise InputError("This model requires five face keypoints per image")
+                if info.keypoints is not None:
+                    if not self.accepts_keypoints:
+                        raise InputError("This model does not accept face keypoints")
+                    try:
+                        with np.errstate(over="raise", invalid="raise", divide="raise"):
+                            alignment_matrix(info.keypoints)
+                    except (ValueError, FloatingPointError, np.linalg.LinAlgError):
+                        raise InputError("Invalid or degenerate face keypoints") from None
                 image = decode_image(load(), self.settings, self.settings.max_batch_pixels - pixels)
+                if (
+                    self.accepts_keypoints
+                    and info.keypoints is None
+                    and image.shape[:2] != (112, 112)
+                ):
+                    raise InputError("Already aligned face crops must be 112x112")
             except InputError as exc:
                 exc.index = index
                 raise

@@ -1,10 +1,11 @@
 """HTTP boundary regression tests; no real model weights or network required."""
 
 import base64
+import json
 import socket
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from io import BytesIO
+from io import BytesIO, RawIOBase
 from types import SimpleNamespace
 
 import numpy as np
@@ -240,58 +241,271 @@ def test_bad_url(url):
         download_image(url, Settings(model_config_path="unused"))
 
 
-def test_url_pins_address_and_rejects_redirects(monkeypatch, image):
+@pytest.fixture
+def download_wire(monkeypatch):
     import ai_inference.service.inputs as module
 
-    settings = Settings(model_config_path="unused")
-    monkeypatch.setattr(module, "public_address", lambda *a: "8.8.8.8")
-    connections = []
-    destinations = []
-    monkeypatch.setattr(
-        socket, "create_connection", lambda target, timeout, source: destinations.append(target)
+    clock = [0.0]
+    destinations, sockets, hostnames = [], [], []
+    monkeypatch.setattr(module, "public_address", lambda *args: "8.8.8.8")
+    monkeypatch.setattr(module.time, "monotonic", lambda: clock[0])
+
+    def install(data, *, slow_after=None, connect_cost=0.0, tls_cost=0.0):
+        class WireFile(RawIOBase):
+            def readable(self):
+                return True
+
+            def readinto(self, buffer):
+                if wire.offset >= len(data):
+                    return 0
+                if slow_after is not None and wire.offset >= slow_after:
+                    wire.delay(0.04)
+                    size = 1
+                else:
+                    size = len(buffer)
+                    if slow_after is not None:
+                        size = min(size, slow_after - wire.offset)
+                chunk = data[wire.offset : wire.offset + size]
+                buffer[: len(chunk)] = chunk
+                wire.offset += len(chunk)
+                return len(chunk)
+
+        class Wire:
+            offset = 0
+            closed = False
+            timeout = 0
+
+            def delay(self, cost):
+                if cost >= self.timeout:
+                    clock[0] += self.timeout
+                    raise TimeoutError()
+                clock[0] += cost
+
+            def settimeout(self, value):
+                self.timeout = value
+
+            def setsockopt(self, *args):
+                pass
+
+            def sendall(self, data):
+                pass
+
+            def makefile(self, *args, **kwargs):
+                self.file = WireFile()
+                return self.file
+
+            def close(self):
+                self.closed = True
+
+        wire = Wire()
+        sockets.append(wire)
+
+        def connect(target, timeout, source):
+            destinations.append(target)
+            wire.settimeout(timeout)
+            try:
+                wire.delay(connect_cost)
+            except BaseException:
+                wire.close()
+                raise
+            return wire
+
+        def wrap(sock, *, server_hostname):
+            hostnames.append(server_hostname)
+            wire.delay(tls_cost)
+            return sock
+
+        monkeypatch.setattr(socket, "create_connection", connect)
+        monkeypatch.setattr(
+            module.ssl, "create_default_context", lambda: SimpleNamespace(wrap_socket=wrap)
+        )
+        return wire
+
+    return SimpleNamespace(
+        install=install,
+        clock=clock,
+        destinations=destinations,
+        sockets=sockets,
+        hostnames=hostnames,
     )
 
-    class Connection:
-        status = 200
-        sock = None
 
-        def __init__(self, host, port, **kwargs):
-            self.host = host
-            self.remaining = image
-            self.closed = False
-            connections.append(self)
-
-        def request(self, *args, **kwargs):
-            self._create_connection((self.host, 443), 10)
-
-        def getresponse(self):
-            return self
-
-        def getheader(self, name, default=None):
-            return default
-
-        def read1(self, size):
-            data, self.remaining = self.remaining[:size], self.remaining[size:]
-            return data
-
-        def close(self):
-            self.closed = True
-
-    monkeypatch.setattr(module.http.client, "HTTPSConnection", Connection)
+def test_url_pins_address_and_rejects_redirects(download_wire, image):
+    settings = Settings(model_config_path="unused")
+    wire = download_wire.install(b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n" + image)
     assert download_image("https://example.com/a.png", settings) == image
-    assert destinations == [("8.8.8.8", 443)]
-    assert connections[0].host == "example.com"
-    assert connections[0].closed
-    Connection.status = 302
+    assert download_wire.destinations == [("8.8.8.8", 443)]
+    assert download_wire.hostnames == ["example.com"]
+    assert wire.closed and wire.file.closed
+    wire = download_wire.install(b"HTTP/1.1 302 Found\r\nContent-Length: 0\r\n\r\n")
     with pytest.raises(InputError, match="redirects"):
         download_image("https://example.com/a.png", settings)
-    assert connections[-1].closed
-    Connection.status = 200
+    assert wire.closed and wire.file.closed
+    wire = download_wire.install(b"HTTP/1.1 200 OK\r\n\r\n" + image)
     with pytest.raises(InputError) as exc:
         download_image(
             "https://example.com/a.png", settings.model_copy(update={"max_image_bytes": 4})
         )
     assert exc.value.status == 413
+    assert wire.closed and wire.file.closed
+
+
+@pytest.mark.parametrize("phase", ["headers", "chunked", "closed_body", "connect", "tls"])
+def test_url_deadline_applies_to_each_network_read_and_handshake(download_wire, phase):
+    headers = b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n"
+    if phase == "headers":
+        wire = download_wire.install(headers + b"image", slow_after=0)
+    elif phase == "chunked":
+        headers = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
+        wire = download_wire.install(
+            headers + b"0" * 100 + b"1\r\nx\r\n0\r\n\r\n", slow_after=len(headers)
+        )
+    elif phase == "closed_body":
+        wire = download_wire.install(headers + b"image", slow_after=len(headers))
+    else:
+        wire = download_wire.install(
+            headers + b"image", connect_cost=0.11 if phase == "connect" else 0.06, tls_cost=0.06
+        )
+    with pytest.raises(InputError) as exc:
+        download_image(
+            "https://example.com/a.png",
+            Settings(model_config_path="unused", url_timeout_seconds=0.1),
+        )
+    assert exc.value.status == 504
+    assert download_wire.clock[0] == pytest.approx(0.1)
+    assert wire.closed
+    if hasattr(wire, "file"):
+        assert wire.file.closed
+
+
+@pytest.mark.parametrize("chunked", [False, True])
+def test_url_closed_connection_keeps_real_socket_file_readable(monkeypatch, image, chunked):
+    import ai_inference.service.inputs as module
+
+    client_sock, server_sock = socket.socketpair()
+    errors = []
+
+    class LocalSocket:
+        def __getattr__(self, name):
+            return getattr(client_sock, name)
+
+        def setsockopt(self, *args):
+            # The local stream exercises real SocketIO without TCP-specific options.
+            pass
+
+    def serve():
+        try:
+            with server_sock:
+                server_sock.settimeout(2)
+                request = b""
+                while b"\r\n\r\n" not in request:
+                    piece = server_sock.recv(4096)
+                    if not piece:
+                        raise RuntimeError("Client closed before sending headers")
+                    request += piece
+                headers = b"HTTP/1.1 200 OK\r\nConnection: close\r\n"
+                if chunked:
+                    headers += b"Transfer-Encoding: chunked\r\n\r\n"
+                    body = f"{len(image):x}\r\n".encode() + image + b"\r\n0\r\n\r\n"
+                else:
+                    headers += f"Content-Length: {len(image)}\r\n\r\n".encode()
+                    body = image
+                server_sock.sendall(headers + body)
+        except Exception as exc:
+            errors.append(exc)
+
+    monkeypatch.setattr(module, "public_address", lambda *args: "8.8.8.8")
+    monkeypatch.setattr(socket, "create_connection", lambda *args: LocalSocket())
+    worker = threading.Thread(target=serve)
+    worker.start()
+    try:
+        assert (
+            download_image("http://example.com/a.png", Settings(model_config_path="unused"))
+            == image
+        )
+    finally:
+        client_sock.close()
+        worker.join(3)
+    assert not worker.is_alive()
+    assert not errors
+
+
+def post_image(client, source, image, keypoints=None):
+    metadata = {} if keypoints is None else {"keypoints": keypoints}
+    if source == "file":
+        return client.post(
+            "/v1/predict/file",
+            files={"files": ("a.png", image)},
+            data={"metadata": json.dumps([metadata])},
+        )
+    if source == "bytes":
+        return client.post(
+            "/v1/predict/bytes",
+            content=image,
+            headers={"Content-Type": "image/png"},
+            params={"metadata": json.dumps(metadata)},
+        )
+    value = (
+        {"data": base64.b64encode(image).decode()}
+        if source == "base64"
+        else {"url": "https://example.com/image.png"}
+    )
+    return client.post(f"/v1/predict/{source}", json={"images": [{**value, **metadata}]})
+
+
+@pytest.mark.parametrize("source", ["file", "base64", "url", "bytes"])
+@pytest.mark.parametrize("face", [False, True])
+def test_invalid_keypoints_rejected_before_model(source, face, image, monkeypatch):
+    monkeypatch.setattr("ai_inference.service.app.download_image", lambda *args: image)
+
+    def factory(path):
+        model = FakeModel(path)
+        if face:
+            model.config.preprocess["steps"] = [{"face_align": {"aligned_input": False}}]
+        return model
+
+    app = create_app(Settings(model_config_path="unused"), model_factory=factory)
+    points = [[1, 1]] * 5 if face else [[1, 1], [2, 1], [1.5, 1], [1, 2], [2, 2]]
+    with TestClient(app) as client:
+        response = post_image(client, source, image, points)
+        assert response.status_code == 422
+        assert response.json()["error"]["index"] == 0
+        assert not app.state.runtime.model.calls
+        assert client.get("/health/ready").status_code == 200
+        if not face:
+            assert post_image(client, source, image).status_code == 200
+
+
+def test_face_batch_validation_is_atomic_and_aligned_crops_are_checked(image):
+    def factory(path):
+        model = FakeModel(path)
+        model.config.preprocess["steps"] = [{"face_align": {"aligned_input": True}}]
+        return model
+
+    app = create_app(Settings(model_config_path="unused"), model_factory=factory)
+    encoded = base64.b64encode(image).decode()
+    points = [[1, 1], [2, 1], [1.5, 1], [1, 2], [2, 2]]
+    with TestClient(app) as client:
+        response = client.post(
+            "/v1/predict/base64",
+            json={"images": [{"data": encoded, "keypoints": points}, {"data": encoded}]},
+        )
+        assert response.status_code == 422
+        assert response.json()["error"]["index"] == 1
+        assert not app.state.runtime.model.calls
+        aligned = BytesIO()
+        Image.new("RGB", (112, 112)).save(aligned, format="PNG")
+        assert post_image(client, "bytes", aligned.getvalue()).status_code == 200
+
+
+def test_url_timeout_releases_admission(application, image, monkeypatch):
+    def timeout(*args):
+        raise InputError("Image download timed out", 504)
+
+    monkeypatch.setattr("ai_inference.service.app.download_image", timeout)
+    with TestClient(application) as client:
+        assert post_image(client, "url", image).status_code == 504
+        assert post_image(client, "bytes", image).status_code == 200
 
 
 def test_feature_response(application, image):

@@ -8,7 +8,7 @@ import socket
 import ssl
 import time
 import warnings
-from io import BytesIO
+from io import BufferedReader, BytesIO, RawIOBase
 from urllib.parse import urlsplit
 
 import numpy as np
@@ -78,8 +78,56 @@ def public_address(host: str, port: int) -> str:
     return addresses[0][4][0]
 
 
+def remaining_timeout(deadline: float) -> float:
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError("Download deadline exceeded")
+    return remaining
+
+
+class DeadlineReader(RawIOBase):
+    """Keep a socket file reference and enforce the deadline on every network read."""
+
+    def __init__(self, sock, deadline):
+        super().__init__()
+        self.sock, self.deadline = sock, deadline
+        self.raw = sock.makefile("rb", buffering=0)
+
+    def readable(self):
+        return True
+
+    def readinto(self, buffer):
+        self.sock.settimeout(remaining_timeout(self.deadline))
+        return self.raw.readinto(buffer)
+
+    def close(self):
+        try:
+            self.raw.close()
+        finally:
+            super().close()
+
+
+class DeadlineSocket:
+    """HTTP's buffered parser must not hide repeated reads from the deadline."""
+
+    def __init__(self, sock, deadline):
+        self.sock, self.deadline = sock, deadline
+
+    def sendall(self, data):
+        self.sock.settimeout(remaining_timeout(self.deadline))
+        self.sock.sendall(data)
+
+    def makefile(self, mode):
+        if mode != "rb":
+            raise ValueError("Only HTTP response reading is supported")
+        return BufferedReader(DeadlineReader(self.sock, self.deadline))
+
+    def close(self):
+        self.sock.close()
+
+
 def download_image(value: str, settings: Settings) -> bytes:
-    connection = None
+    connection = response = None
     try:
         url = urlsplit(value)
         if (
@@ -108,10 +156,23 @@ def download_image(value: str, settings: Settings) -> bytes:
             connection = http.client.HTTPConnection(
                 host, port, timeout=settings.url_timeout_seconds
             )
+
         # Pin the validated address; HTTPS still verifies TLS against the original hostname.
-        connection._create_connection = lambda target, timeout, source_address=None: (
-            socket.create_connection((address, port), timeout, source_address)
-        )
+        def connect_pinned(target, timeout, source_address=None):
+            sock = socket.create_connection(
+                (address, port), remaining_timeout(deadline), source_address
+            )
+            try:
+                # HTTPS performs its handshake next, using the remaining total budget.
+                sock.settimeout(remaining_timeout(deadline))
+                return sock
+            except BaseException:
+                sock.close()
+                raise
+
+        connection._create_connection = connect_pinned
+        connection.connect()
+        connection.sock = DeadlineSocket(connection.sock, deadline)
         path = url.path or "/"
         if url.query:
             path += "?" + url.query
@@ -128,13 +189,9 @@ def download_image(value: str, settings: Settings) -> bytes:
             raise InputError("Downloaded image exceeds byte limit", 413)
         chunks, size = [], 0
         while True:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise TimeoutError()
-            # HTTPResponse can retain the socket after HTTPConnection releases it.
-            if connection.sock is not None:
-                connection.sock.settimeout(remaining)
+            remaining_timeout(deadline)
             chunk = response.read1(min(65536, settings.max_image_bytes + 1 - size))
+            remaining_timeout(deadline)
             if not chunk:
                 break
             chunks.append(chunk)
@@ -149,5 +206,7 @@ def download_image(value: str, settings: Settings) -> bytes:
     except (OSError, ValueError, http.client.HTTPException, UnicodeError) as exc:
         raise InputError("Unable to download image URL", 422) from exc
     finally:
+        if response is not None:
+            response.close()
         if connection is not None:
             connection.close()

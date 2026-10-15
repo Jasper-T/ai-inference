@@ -25,16 +25,16 @@ uv sync --locked --python 3.12 --no-default-groups --extra ascend
 需要 HTTP 服务时可组合安装：
 
 ```bash
-pip install 'ai-inference[service,onnx-cpu]'
+pip install './ai_inference-0.2.0-py3-none-any.whl[service,onnx-cpu]'
 # 在本仓库安装 CPU 服务运行环境
 uv sync --locked --no-default-groups --extra service --extra onnx-cpu
 ```
 
-上述安装方式需要包含 `service` extra 的新版本；此前的 `0.2.0` 制品不包含该 extra。基础安装不引入 FastAPI/Uvicorn，服务代码包含在统一 wheel 中。
+`0.2.0` 包含 `service` extra。上面的 wheel 命令在从 GitHub Release 下载制品后执行；本仓库工作流不上传 PyPI。包名安装要求对应版本存在于所用包索引。基础安装不引入 FastAPI/Uvicorn，服务代码包含在统一 wheel 中。
 
 三个后端 extras 互斥。默认 dev/test 组包含 CPU ONNX Runtime，GPU / Ascend 环境须关闭默认组。切换后端建议使用独立环境。Ascend extra 按 Linux x86_64 / aarch64、CPython 3.10–3.12 选择官方 ACLRuntime / ais_bench 0.0.2 wheel，其他环境需自行准备兼容运行时。
 
-当前源码版本为 **0.2.0**，变更和迁移说明见 [CHANGELOG](CHANGELOG.md)。当前快照包含尚未发布的服务等更新，请先按上文从源码安装。后续正式版本将通过 [GitHub Releases](https://github.com/Jasper-T/ai-inference/releases) 提供 wheel、源码包及 `SHA256SUMS`；取得经过验收的 wheel 后可按以下形式安装：
+当前版本为 **0.2.0**，变更和迁移说明见 [CHANGELOG](CHANGELOG.md)。发行工作流通过 [GitHub Releases](https://github.com/Jasper-T/ai-inference/releases) 提供 wheel、源码包及 `SHA256SUMS`；取得 wheel 并核对哈希后安装：
 
 ```bash
 uv venv --python 3.12
