@@ -1,0 +1,33 @@
+# service 审查与修复记录
+
+初次审查：2026-10-14；发布修复：2026-10-15。服务现位于 `src/ai_inference/service/`，与 SDK 统一发行。以下两项问题已修复，并纳入回归。
+
+## 下载时间预算
+
+修复前，截止时间只在 HTTP 读取循环外检查；慢速分块头和响应头可以在单次解析中执行多次读取，超出预算。`Connection: close` 还会清空连接对象的 socket 引用，而响应继续持有底层连接。
+
+[inputs.py](https://github.com/Jasper-T/ai-inference/blob/main/src/ai_inference/service/inputs.py) 现在对每次底层读取、发送、TCP 连接和 TLS 握手使用剩余预算。响应使用持有独立 socket 文件引用的读取器，即使连接对象已经释放引用，也能继续读取并约束时间。异常或校验拒绝后显式关闭响应与连接，不启动后台下载或伪造取消。
+
+回归覆盖慢响应头、慢分块头、连接关闭后的慢响应体、连接和 TLS 超时、超时后的准入恢复，以及真实本地 socket 文件在连接关闭后的读取和清理。公网 DNS 校验、固定连接 IP、原域名 TLS 证书校验、拒绝重定向、代理和压缩响应的行为保留。
+
+DNS 解析时间仍由操作系统控制，不计入后续网络预算；此预算也不包含图片解码或模型执行。
+
+## 人脸关键点校验
+
+修复前，任意附带关键点的输入都会传为 `FaceInput`，普通模型或退化五点导致 SDK 预处理异常，最终返回 500。
+
+[runtime.py](https://github.com/Jasper-T/ai-inference/blob/main/src/ai_inference/service/runtime.py) 现在在模型执行前检查其预处理是否消费关键点，并复用 [SFace 的几何校验](https://github.com/Jasper-T/ai-inference/blob/main/src/ai_inference/processing/decoders/sface.py)。不支持的关键点、缺少必填五点、退化对齐和非 112×112 的已对齐裁剪返回带图片索引的 422。所有图片校验成功后才调用模型，模型执行故障继续返回 500。
+
+回归覆盖四种输入中的错误关键点、有效五点传递、批量第二张错误时的原子拒绝、已对齐裁剪和失败后的继续请求。SFace 提取对齐矩阵与图像变换的计算保持相同算法。
+
+## 安装与验证边界
+
+服务运行依赖只声明在 `service` extra，根 SDK 导入不加载 HTTP 框架。服务参与统一源码与发布检查；wheel 包含服务模块，源码包包含服务测试及文档，权重和构建副本不进入制品。
+
+自动化测试和合成 smoke 不代表 GPU/Ascend 验收或模型精度。真实模型检查仅使用本地已有权重，项目与服务不负责自动下载模型。
+
+发布前，锁定依赖环境中的 407 项测试、smoke、Ruff 和锁文件校验通过。独立环境仅安装 wheel 的基础依赖时，SDK 可导入且没有 FastAPI/Uvicorn；组合安装 `service,onnx-cpu` 后，在仓库外验证了真实 YOLO 四种输入结果一致、SFace 有效五点返回 128 维特征，以及普通模型附带关键点和 SFace 重合/共线五点返回带索引的 422。URL 传输使用模拟数据。wheel/sdist 的内容和可选依赖元数据通过检查。
+
+本次外网检查中，本机将公开图片域名解析为非公网地址，服务按防护策略拒绝；固定公网地址的 HTTPS 握手也未在本机成功完成。外网端到端行为仍需部署环境验收，没有为通过检查而放宽 URL 安全限制。本地真实 socket 及可控 HTTP/TLS 传输回归验证读取、解析和截止时间路径。
+
+安装、接口见 [服务说明](https://github.com/Jasper-T/ai-inference/blob/main/docs/service/README.md)，发布验收流程见 [发布流程](release-plan.md)。
