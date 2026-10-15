@@ -1,0 +1,34 @@
+name: Package acceptance
+
+on: [push, pull_request, workflow_dispatch]
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        python: ['3.10', '3.12']
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
+        with:
+          version: '0.12.5'
+          python-version: ${{ matrix.python }}
+          enable-cache: false
+      - name: Validate source and build distributions
+        run: |
+          uv sync --locked --extra service
+          uv lock --check
+          uv run --locked --no-sync ruff check src tests scripts examples
+          uv run --locked --no-sync ruff format --check src tests scripts examples
+          uv run --locked --no-sync python scripts/test.py all -- -rs
+          uv build --build-constraint .github/build-constraints.txt
+      - name: Validate metadata and clean installations
+        run: |
+          uv run --locked --no-sync twine check --strict dist/*.whl dist/*.tar.gz
+          uv run --locked --no-sync python scripts/check_dist.py dist

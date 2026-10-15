@@ -40,4 +40,8 @@ benchmark默认只显示终端表格。添加 `--save results/benchmark_yolo11.j
 
 ## Release 工具
 
+`uv run --locked --no-sync python scripts/check_dist.py dist` 检查 PyPI 发行元数据、许可文件和
+Ascend 独立依赖文件，并在临时环境分别验证基础安装与服务 CPU 安装；需要网络，不上传制品。
+同时执行 `uv run --locked --no-sync twine check --strict dist/*.whl dist/*.tar.gz`。
+
 release.py（Python 3.12）供 Actions 校验版本、提取 tag 的 CHANGELOG、检查构建包并发布 GitHub Release；默认分支工具可处理没有该脚本的旧 tag。tag/validate/prepare 不发布，publish 会修改 Release。流程与失败保护见[发布工作流说明](../docs/releases/actions.md)。

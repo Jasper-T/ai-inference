@@ -1,13 +1,15 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai-inference"
-version = "0.2.0"
+version = "0.2.1"
 description = "Pipeline-based model inference SDK with a transport-independent engine boundary"
 readme = "README.md"
 requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
 dependencies = [
     "numpy>=1.24,<3",
     "opencv-python-headless>=4.8,<5",
@@ -16,6 +18,12 @@ dependencies = [
     "Pillow>=9.5,<13",
     "loguru>=0.7,<1",
 ]
+
+[project.urls]
+Homepage = "https://github.com/Jasper-T/ai-inference"
+Documentation = "https://github.com/Jasper-T/ai-inference#readme"
+Repository = "https://github.com/Jasper-T/ai-inference"
+Issues = "https://github.com/Jasper-T/ai-inference/issues"
 
 [project.optional-dependencies]
 service = [
@@ -30,16 +38,8 @@ onnx-gpu = [
     "onnxruntime-gpu>=1.18,<2; platform_system == 'Linux' or platform_system == 'Windows'",
 ]
 
-# Vendor wheels are selected by CPython version and Linux architecture.
-ascend = [
-    "aclruntime @ https://aisbench.obs.myhuaweicloud.com/packet/ais_bench_infer/0.0.2/ait/aclruntime-0.0.2-cp310-cp310-linux_aarch64.whl ; sys_platform == 'linux' and platform_machine == 'aarch64' and python_version == '3.10' and implementation_name == 'cpython'",
-    "aclruntime @ https://aisbench.obs.myhuaweicloud.com/packet/ais_bench_infer/0.0.2/ait/aclruntime-0.0.2-cp310-cp310-linux_x86_64.whl ; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version == '3.10' and implementation_name == 'cpython'",
-    "aclruntime @ https://aisbench.obs.myhuaweicloud.com/packet/ais_bench_infer/0.0.2/ait/aclruntime-0.0.2-cp311-cp311-linux_aarch64.whl ; sys_platform == 'linux' and platform_machine == 'aarch64' and python_version == '3.11' and implementation_name == 'cpython'",
-    "aclruntime @ https://aisbench.obs.myhuaweicloud.com/packet/ais_bench_infer/0.0.2/ait/aclruntime-0.0.2-cp311-cp311-linux_x86_64.whl ; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version == '3.11' and implementation_name == 'cpython'",
-    "aclruntime @ https://aisbench.obs.myhuaweicloud.com/packet/ais_bench_infer/0.0.2/ait/aclruntime-0.0.2-cp312-cp312-linux_aarch64.whl ; sys_platform == 'linux' and platform_machine == 'aarch64' and python_version == '3.12' and implementation_name == 'cpython'",
-    "aclruntime @ https://aisbench.obs.myhuaweicloud.com/packet/ais_bench_infer/0.0.2/ait/aclruntime-0.0.2-cp312-cp312-linux_x86_64.whl ; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version == '3.12' and implementation_name == 'cpython'",
-    "ais-bench @ https://aisbench.obs.myhuaweicloud.com/packet/ais_bench_infer/0.0.2/ait/ais_bench-0.0.2-py3-none-any.whl ; sys_platform == 'linux' and (platform_machine == 'aarch64' or platform_machine == 'x86_64') and python_version >= '3.10' and python_version < '3.13' and implementation_name == 'cpython'",
-]
+# Compatibility extra; install vendor wheels separately from requirements/ascend.txt.
+ascend = []
 
 [dependency-groups]
 test = [
@@ -51,6 +51,7 @@ test = [
 dev = [
     {include-group = "test"},
     "ruff==0.16.10",
+    "twine>=6.1,<8",
 ]
 
 [tool.uv]

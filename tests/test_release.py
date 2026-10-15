@@ -211,6 +211,7 @@ def test_ascend_wheel_selection(python, arch):
         "optional-dependencies"
     ]
     assert set(extras) == {"service", "onnx-cpu", "onnx-gpu", "ascend"}
+    assert extras["ascend"] == []
     environment = {
         "sys_platform": "linux",
         "platform_machine": arch,
@@ -219,7 +220,8 @@ def test_ascend_wheel_selection(python, arch):
     }
     selected = [
         Requirement(dep)
-        for dep in extras["ascend"]
+        for dep in (root / "requirements/ascend.txt").read_text().splitlines()
+        if dep and not dep.startswith("#")
         if Requirement(dep).marker.evaluate(environment)
     ]
     assert sorted(dep.name for dep in selected) == ["aclruntime", "ais-bench"]
@@ -241,9 +243,11 @@ def test_ascend_does_not_select_incompatible_wheels(python, arch, platform, impl
     from packaging.requirements import Requirement
 
     root = Path(__file__).resolve().parents[1]
-    deps = release.tomllib.loads((root / "pyproject.toml").read_text())["project"][
-        "optional-dependencies"
-    ]["ascend"]
+    deps = [
+        line
+        for line in (root / "requirements/ascend.txt").read_text().splitlines()
+        if line and not line.startswith("#")
+    ]
     environment = {
         "sys_platform": platform,
         "platform_machine": arch,

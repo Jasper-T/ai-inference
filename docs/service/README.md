@@ -18,7 +18,7 @@ AI_INFERENCE_MODEL_CONFIG=configs/yolo11.yaml \
 
 服务代码位于 `src/ai_inference/service/`，随 `ai-inference` 统一发行。`service` extra 安装 FastAPI、Uvicorn 和 multipart 依赖，可与任一后端 extra 组合。环境变量中的配置路径相对进程工作目录，YAML 内的权重路径仍相对 YAML 目录。
 
-`0.2.0` 包含可选 HTTP 服务。取得 GitHub Release 的 wheel 后，使用 `pip install './ai_inference-0.2.0-py3-none-any.whl[service,onnx-cpu]'` 安装；本地开发使用上面的源码安装方式。若对应制品已上传所用包索引，也可使用 `pip install 'ai-inference[service,onnx-cpu]'`。安装后可从其他目录运行 `uvicorn ai_inference.service.app:app`，部署时建议使用绝对配置路径。纯 SDK 使用者无需安装 `service` extra，基础导入不加载 HTTP 框架。
+`0.2.1` 包含可选 HTTP 服务。取得 GitHub Release 的 wheel 后，使用 `pip install './ai_inference-0.2.1-py3-none-any.whl[service,onnx-cpu]'` 安装；本地开发使用上面的源码安装方式。若对应制品已上传所用包索引，也可使用 `pip install 'ai-inference[service,onnx-cpu]'`。安装后可从其他目录运行 `uvicorn ai_inference.service.app:app`，部署时建议使用绝对配置路径。纯 SDK 使用者无需安装 `service` extra，基础导入不加载 HTTP 框架。
 
 启动阶段加载模型，按模型 YAML 的 `runtime.warmup` 设置预热；加载失败则启动失败。不要使用多个 worker 扩容同一设备：每个 worker 都会独立加载模型。单进程只接纳一个推理请求，包含输入解析、下载、解码、推理和响应发送；忙时立即返回 503，不排队。健康检查不等待推理。推理在工作线程执行，SDK 当前没有统一的显式 `close()` 接口，停止时释放服务持有的模型引用，设备资源最终由进程退出回收。
 

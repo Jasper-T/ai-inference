@@ -8,3 +8,5 @@ recursive-include tests *.py *.yaml *.jpg
 recursive-include scripts *.py *.md
 global-exclude *.local.yaml *.local.yml
 global-exclude __pycache__ *.py[cod]
+include LICENSE
+recursive-include requirements *.txt

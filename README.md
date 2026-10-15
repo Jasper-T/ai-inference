@@ -20,28 +20,29 @@ uv sync --locked --no-default-groups --extra onnx-gpu
 
 # Ascend Linux 运行环境，CANN、驱动和设备环境须单独准备
 uv sync --locked --python 3.12 --no-default-groups --extra ascend
+uv pip install --python .venv/bin/python -r requirements/ascend.txt
 ```
 
 需要 HTTP 服务时可组合安装：
 
 ```bash
-pip install './ai_inference-0.2.0-py3-none-any.whl[service,onnx-cpu]'
+pip install './ai_inference-0.2.1-py3-none-any.whl[service,onnx-cpu]'
 # 在本仓库安装 CPU 服务运行环境
 uv sync --locked --no-default-groups --extra service --extra onnx-cpu
 ```
 
-`0.2.0` 包含 `service` extra。上面的 wheel 命令在从 GitHub Release 下载制品后执行；本仓库工作流不上传 PyPI。包名安装要求对应版本存在于所用包索引。基础安装不引入 FastAPI/Uvicorn，服务代码包含在统一 wheel 中。
+`0.2.1` 包含 `service` extra。上面的 wheel 命令在从 GitHub Release 下载制品后执行；新版本标签推送会发布 GitHub Release 并上传 PyPI，手动运行时也可选择仅 GitHub Release、TestPyPI 或 PyPI（需先配置 Trusted Publishing，见[发布说明](docs/releases/actions.md#通过-actions-上传-pypi)）。包名安装要求对应版本存在于所用包索引。基础安装不引入 FastAPI/Uvicorn，服务代码包含在统一 wheel 中。
 
-三个后端 extras 互斥。默认 dev/test 组包含 CPU ONNX Runtime，GPU / Ascend 环境须关闭默认组。切换后端建议使用独立环境。Ascend extra 按 Linux x86_64 / aarch64、CPython 3.10–3.12 选择官方 ACLRuntime / ais_bench 0.0.2 wheel，其他环境需自行准备兼容运行时。
+三个后端 extras 互斥。默认 dev/test 组包含 CPU ONNX Runtime，GPU / Ascend 环境须关闭默认组。切换后端建议使用独立环境。`ascend` 是空的兼容 extra，不再安装厂商运行时。独立的 `requirements/ascend.txt` 按 Linux x86_64 / aarch64、CPython 3.10–3.12 选择官方 ACLRuntime / ais_bench 0.0.2 wheel；仅在这些环境执行，其他环境需自行准备兼容运行时。此文件中的平台条件在不支持的环境会跳过所有条目，并不表示该环境支持 Ascend。
 
-当前版本为 **0.2.0**，变更和迁移说明见 [CHANGELOG](CHANGELOG.md)。发行工作流通过 [GitHub Releases](https://github.com/Jasper-T/ai-inference/releases) 提供 wheel、源码包及 `SHA256SUMS`；取得 wheel 并核对哈希后安装：
+当前版本为 **0.2.1**，变更和迁移说明见 [CHANGELOG](CHANGELOG.md)。发行工作流通过 [GitHub Releases](https://github.com/Jasper-T/ai-inference/releases) 提供 wheel、源码包及 `SHA256SUMS`；取得 wheel 并核对哈希后安装：
 
 ```bash
 uv venv --python 3.12
-uv pip install './ai_inference-0.2.0-py3-none-any.whl[onnx-cpu]'
+uv pip install './ai_inference-0.2.1-py3-none-any.whl[onnx-cpu]'
 ```
 
-GPU 和 Ascend 分别使用 `[onnx-gpu]`、`[ascend]`。GPU 运行时必须与 NVIDIA 驱动、CUDA、cuDNN 兼容，见 [CUDA 部署说明](docs/configuration.md#cuda-部署与失败)。
+GPU 使用 `[onnx-gpu]`。Ascend 安装基础 wheel 后，还须从同版本源码包取得 `requirements/ascend.txt`，执行 `uv pip install -r requirements/ascend.txt`（或 `python -m pip install -r requirements/ascend.txt`）。GPU 运行时必须与 NVIDIA 驱动、CUDA、cuDNN 兼容，见 [CUDA 部署说明](docs/configuration.md#cuda-部署与失败)。
 
 ## 检测调用
 
@@ -149,3 +150,7 @@ uv build
 - [日志与性能测量](docs/logging-and-benchmark.md)：日志上下文与 benchmark。
 - [测试与复现](docs/testing.md)：自动化测试、真实模型导出与参考对照。
 - [发布工作流](docs/releases/actions.md)：构建、发布与失败重试。
+
+## 许可证
+
+本项目采用 [MIT License](LICENSE)。第三方运行时和模型权重各自的许可须单独遵守。

@@ -9,6 +9,14 @@ version and release notes. HTTP service changes are identified below.
 
 ## Unreleased
 
+## 0.2.1 - 2026-10-15
+
+### Changed
+
+- Move Ascend vendor wheel URLs to `requirements/ascend.txt`; the `ascend` extra remains empty for compatibility and requires separate runtime installation. Distribution metadata no longer includes direct URL dependencies.
+- Declare the MIT license and project links, and add distribution metadata, clean installation and strict Twine checks before publication.
+- Publish new version tags to PyPI through GitHub Actions Trusted Publishing, reusing validated GitHub Release artifacts; manual runs also support TestPyPI or GitHub-only publishing.
+
 ## 0.2.0 - 2026-10-15
 
 ### Added
