@@ -9,6 +9,26 @@ version and release notes. HTTP service changes are identified below.
 
 ## Unreleased
 
+## 0.2.3 - 2026-11-19
+
+### Added
+
+- Explicit `onnx-gpu-cu11` extra for PyPI ORT 1.18.1 (CUDA 11.8 / cuDNN 8) on Linux x86_64 and Windows x64 with Python 3.10–3.12.
+- Source, editable, Release wheel, custom build and offline installation instructions, plus a CPU YuNet Quick Start.
+- Minimum-dependency acceptance on Linux x86_64 / ARM64 and Windows x64 with Python 3.10–3.12.
+
+### Changed
+
+- Remove the generic `onnx-gpu` extra. Migrate to exactly one of `onnx-gpu-cu11`, `onnx-gpu-cu12` or `onnx-gpu-cu13` matching the target CUDA environment.
+- Make `ascend` strictly require `aclruntime==0.0.2` and `ais-bench==0.0.2` on supported Linux/CPython combinations. uv installs vendor sources directly with `--extra ascend`; pip must also use the matching `requirements/ascend.txt` file. Vendor wheel SHA256 hashes are generated from `uv.lock` and checked before release.
+- Keep test and development tools independent of the inference backend; explicitly select `onnx-cpu`, a CUDA family or `ascend` when synchronizing.
+- Support the documented lower dependency combinations while keeping NumPy below 2 and OpenCV below 4.12 across all backends.
+
+### Fixed
+
+- Include `httpx` in the `service` extra so the HTTP client example runs after a runtime-only service installation.
+- Include the package/release workflows and pinned build constraints in the source distribution. Release acceptance now installs and runs the complete test suite from the extracted sdist in an isolated environment.
+
 ## 0.2.2 - 2026-10-15
 
 ### Added

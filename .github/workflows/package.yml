@@ -35,16 +35,59 @@ jobs:
           enable-cache: false
       - name: Validate source and build distributions
         run: |
-          uv sync --locked --extra service
+          uv sync --locked --extra service --extra onnx-cpu
           uv lock --check
           uv run --locked --no-sync ruff check src tests scripts examples
           uv run --locked --no-sync ruff format --check src tests scripts examples
+          uv run --locked --no-sync python scripts/ascend_requirements.py --check
           uv run --locked --no-sync python scripts/test.py all -- -rs
           uv build --build-constraint .github/build-constraints.txt
       - name: Validate metadata and clean installations
         run: |
           uv run --locked --no-sync twine check --strict dist/*.whl dist/*.tar.gz
           uv run --locked --no-sync python scripts/check_dist.py dist
+      - name: Validate locked Ascend environment keeps vendor packages and tools
+        run: |
+          uv sync --locked --extra service --extra ascend
+          uv sync --locked --extra service --extra ascend
+          uv pip check
+          uv run --locked --no-sync --extra service --extra ascend python -c "from importlib.metadata import distributions, version; import pytest; names = {d.metadata['Name'].lower() for d in distributions()}; assert {'aclruntime', 'ais-bench'} <= names; assert not names & {'onnxruntime', 'onnxruntime-gpu'}; print(version('aclruntime'), version('ais-bench'))"
+          uv run --locked --no-sync --extra service --extra ascend python scripts/test.py quick -- -rs
+      - name: Validate locked CUDA 11 package installation without CPU package
+        if: matrix.runner == 'ubuntu-24.04'
+        run: |
+          uv sync --locked --extra service --extra onnx-gpu-cu11
+          uv pip check
+          uv run --locked --no-sync --extra service --extra onnx-gpu-cu11 python -c "from importlib.metadata import distributions, version; import numpy; import cv2; import onnxruntime as ort; import pytest; from ai_inference.service.app import app; assert not {d.metadata['Name'].lower() for d in distributions()} & {'onnxruntime', 'aclruntime', 'ais-bench'}; assert version('onnxruntime-gpu') == '1.18.1'; assert 'CUDAExecutionProvider' in ort.get_available_providers(); assert app.openapi()['paths']; print(ort.__version__, numpy.__version__, cv2.__version__)"
+
+  minimum-runtime:
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm, windows-2022]
+        python: ['3.10', '3.11', '3.12']
+    env:
+      MINIMUM_PYTHON: ${{ runner.os == 'Windows' && 'venv/Scripts/python.exe' || 'venv/bin/python' }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
+        with:
+          version: '0.12.5'
+          python-version: ${{ matrix.python }}
+          enable-cache: false
+      - name: Validate minimum ORT and HTTP service combination
+        run: |
+          uv venv --python '${{ matrix.python }}' venv
+          uv pip install --python "$MINIMUM_PYTHON" --only-binary numpy,opencv-python-headless,PyYAML,pydantic-core,Pillow,onnxruntime,onnx -r requirements/minimum.txt '.[service,onnx-cpu]' 'onnxruntime==1.18.0' 'fastapi==0.115.0' 'uvicorn==0.30.0' 'python-multipart==0.0.18' 'pytest>=8,<9' 'httpx==0.27.0' 'onnx==1.16.0'
+          uv pip check --python "$MINIMUM_PYTHON"
+          "$MINIMUM_PYTHON" scripts/test.py all -- -rs
 
   windows-runtime:
     runs-on: windows-2022
@@ -53,7 +96,11 @@ jobs:
       matrix:
         include:
           - python: '3.10'
-            extra: onnx-gpu
+            extra: onnx-gpu-cu11
+          - python: '3.11'
+            extra: onnx-gpu-cu11
+          - python: '3.12'
+            extra: onnx-gpu-cu11
           - python: '3.10'
             extra: onnx-gpu-cu12
           - python: '3.11'
@@ -72,12 +119,12 @@ jobs:
           enable-cache: false
       - name: Validate locked CPU installation
         run: |
-          uv sync --locked --extra service
+          uv sync --locked --extra service --extra onnx-cpu
           uv run --locked --no-sync python -c "import onnxruntime; from ai_inference.service.app import app; assert app.openapi()['paths']; print(onnxruntime.__version__)"
       - name: Validate locked GPU package installation without CPU package
         env:
           GPU_EXTRA: ${{ matrix.extra }}
         run: |
-          uv sync --locked --no-default-groups --extra service --extra "$env:GPU_EXTRA"
+          uv sync --locked --extra service --extra "$env:GPU_EXTRA"
           uv pip check
-          uv run --locked --no-sync --no-default-groups --extra service --extra "$env:GPU_EXTRA" python -c "from importlib.metadata import distributions, version; import onnxruntime as ort; from ai_inference.service.app import app; assert 'onnxruntime' not in {d.metadata['Name'].lower() for d in distributions()}; assert 'CUDAExecutionProvider' in ort.get_available_providers(); assert app.openapi()['paths']; print(version('onnxruntime-gpu'))"
+          uv run --locked --no-sync --extra service --extra "$env:GPU_EXTRA" python -c "from importlib.metadata import distributions, version; import onnxruntime as ort; import pytest; from ai_inference.service.app import app; assert not {d.metadata['Name'].lower() for d in distributions()} & {'onnxruntime', 'aclruntime', 'ais-bench'}; assert 'CUDAExecutionProvider' in ort.get_available_providers(); assert app.openapi()['paths']; print(version('onnxruntime-gpu'))"

@@ -7,7 +7,7 @@
 ## 自动化测试
 
 ```bash
-uv sync --locked --extra service
+uv sync --locked --extra service --extra onnx-cpu
 uv run --locked --no-sync python scripts/test.py all  # 完整 SDK/服务 pytest + smoke
 uv run --locked --no-sync python scripts/test.py quick    # 单元回归，排除 real_ort 命名的测试
 uv run --locked --no-sync python scripts/test.py smoke    # 合成引擎：warmup、分批、padding和空输入
@@ -15,15 +15,32 @@ uv run --locked --no-sync python scripts/test.py ort      # 真实 CPU ORT 执�
 uv run --locked --no-sync python scripts/test.py all -- -x  # 向 pytest 传入额外参数，首个失败即停止
 ```
 
-默认开发依赖提供测试工具；启用 `service` extra 后完整测试包括服务回归。只验证基础 SDK 时使用 `uv sync --locked`，不要求 HTTP 运行依赖；也可追加 `-- --ignore=tests/test_service.py` 明确排除服务。服务安装与接口见 [服务说明](service/README.md)。
+默认开发依赖只提供测试与检查工具，不包含 CPU ORT。CPU 完整测试显式选择 `onnx-cpu`；启用 `service` extra 后还包括服务回归。只验证基础 SDK 时使用 `uv sync --locked` 并执行 `quick`/`smoke`，不要求 HTTP 或 ORT 运行依赖；也可追加 `-- --ignore=tests/test_service.py` 明确排除服务。服务安装与接口见 [服务说明](service/README.md)。
 
 脚本使用调用它的 Python 解释器，自动定位仓库并将源码加入子进程 PYTHONPATH，可从任意目录调用绝对路径。任何检查失败返回非零退出码，并停止后续步骤；不会自动安装依赖、下载权重或修改运行时配置。额外 pytest 参数仅作用于 pytest 步骤。
 
-完整测试使用 uv 默认 dev 组（包含 test 组）；quick 需要 pytest 和基础 SDK 依赖，smoke 只需要基础 SDK 依赖。quick/ort 按 `real_ort` 测试名称划分，新添加的实际 ORT 测试应沿用该命名。可继续直接运行 `uv run --locked python -m pytest` 来选择文件或单项测试。
+完整 CPU 测试使用 uv 默认 dev 组（包含 test 组）和 `onnx-cpu` extra；quick 需要 pytest 和基础 SDK 依赖，smoke 只需要基础 SDK 依赖。GPU/Ascend 可以保留同一开发组，并选择自身后端，不安装 CPU ORT 包。quick/ort 按 `real_ort` 测试名称划分，新添加的实际 ORT 测试应沿用该命名。可继续直接运行 `uv run --locked --no-sync python -m pytest` 来选择文件或单项测试。
+
+Ascend 的实际运行依赖由 `ascend` extra 声明，`tool.uv.sources` 指定厂商 wheel，`uv.lock` 固定 SHA256；修改来源后先运行 `uv lock`，再运行 `python scripts/ascend_requirements.py`。`python scripts/ascend_requirements.py --check` 和 CI 校验生成的 pip 安装文件与来源及锁定哈希是否一致。`uv sync --locked --extra ascend` 可同时保留开发工具和厂商包；重复同步应使用相同命令。
 
 所有默认模型配置与合成 fixture YAML 均省略 `inputs` / `outputs`。真实模型由引擎读取；合成测试由测试助手注入固定契约，或用实际 CPU ORT 的合成图读取。合成测试和 smoke 的固定张量契约位于 `tests/model_contracts.py`；RF-DETR / OM 的处理步骤分别使用 `tests/fixtures/rfdetr_synthetic.yaml` / `tests/fixtures/rfdetr_om_synthetic.yaml`。RT-DETR 符号输出和固定/动态 batch 另有专门回归。
 
 覆盖 OM 自动发现、静态 batch 冲突、原始/解析后元数据日志、RT-DETR 符号输出和 RF-DETR 统一阈值，以及 RF-DETR/YOLO/RT-DETR/YuNet/SFace 前后处理、处理器注入、固定/动态 batch、padding、非法输入、provider失败和模型I/O契约。ort 使用实际 CPU ORT 与合成模型，不代表 GPU、真实权重或识别效果验证。
+
+## 最低依赖验收
+
+[requirements/minimum.txt](../requirements/minimum.txt) 固定 ORT 与 HTTP 服务同时可用的共享依赖下限，覆盖 Python 3.10、3.11、3.12。验收环境同时安装 CPU ORT 1.18.0、FastAPI 0.115.0、Uvicorn 0.30.0 和 python-multipart 0.0.18，并执行完整 SDK、CPU ONNX 和服务测试。使用独立虚拟环境，避免直接降级日常开发环境。
+
+```bash
+uv venv --python 3.10 venv
+uv pip install --python venv/bin/python --only-binary numpy,opencv-python-headless,PyYAML,pydantic-core,Pillow,onnxruntime,onnx -r requirements/minimum.txt '.[service,onnx-cpu]' 'onnxruntime==1.18.0' 'fastapi==0.115.0' 'uvicorn==0.30.0' 'python-multipart==0.0.18' 'pytest>=8,<9' 'httpx==0.27.0' 'onnx==1.16.0'
+uv pip check --python venv/bin/python
+venv/bin/python scripts/test.py all -- -rs
+```
+
+将 `--python 3.10` 换成 3.11 或 3.12 即可验证相应组合；Windows 将 `venv/bin/python` 换成 `venv/Scripts/python.exe`。编译依赖要求使用 wheel；Loguru 0.2.2 的间接依赖 `better-exceptions-fork` 只有纯 Python 源码分发，安装工具会构建其 wheel。`httpx` 同时属于 `service` 依赖；`onnx` 和 pytest 仅用于验收，三者均不属于基础 SDK 运行依赖。
+
+Package acceptance 的 `minimum-runtime` 矩阵在 Linux x86_64 / ARM64 和 Windows x64 上执行同一组合的完整验收；普通安装矩阵继续验证锁定的较新依赖。CI 配置存在不代表所有远端任务已经执行成功。GPU 和 Ascend 仍需目标设备验收。
 
 ## YOLO11n 真实模型
 
@@ -59,7 +76,7 @@ PY
 在已安装 SDK 和 CPU ORT 的环境中执行：
 
 ```bash
-uv run --locked python examples/yolo11.py  # 将 image_path 改为 artifacts/yolo11-test/bus.jpg
+uv run --locked --no-sync python examples/yolo11.py  # 将 image_path 改为 artifacts/yolo11-test/bus.jpg
 ```
 
 ### 与官方 ONNX 实现对照
@@ -80,7 +97,7 @@ Nano 导出工具与官方 PyTorch 模型比较原始输出。
 模型契约见 [配置说明](configuration.md#rf-detr)。选择CUDA时修改configs/rfdetr.yaml中的provider：
 
 ```bash
-uv run --locked python examples/rfdetr.py  # 在示例中修改 yaml_path 与 image_path
+uv run --locked --no-sync python examples/rfdetr.py  # 在示例中修改 yaml_path 与 image_path
 ```
 
 CPU 可在内存中覆盖运行时配置：
@@ -110,12 +127,12 @@ python scripts/verify_predictions.py \
   --image artifacts/yolo11-test/bus.jpg --report artifacts/parity/yolo.json
 
 # YuNet：对照 OpenCV CPU DNN 原始输出和 FaceDetectorYN
-uv run --locked python scripts/verify_faces.py --family yunet \
+uv run --locked --no-sync python scripts/verify_faces.py --family yunet \
   --config configs/yunet.yaml --model models/face_detection_yunet_2023mar.onnx \
   --image /path/to/face_sample.png --report artifacts/parity/yunet.json
 
 # SFace：对照 FaceRecognizerSF 对齐、原始特征和归一化特征
-uv run --locked python scripts/verify_faces.py --family sface \
+uv run --locked --no-sync python scripts/verify_faces.py --family sface \
   --config configs/sface.yaml --model models/face_recognition_sface_2021dec.onnx \
   --image /path/to/face_sample.png --landmarks /path/to/landmarks.json \
   --report artifacts/parity/sface.json

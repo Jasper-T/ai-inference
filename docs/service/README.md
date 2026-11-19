@@ -16,9 +16,11 @@ AI_INFERENCE_MODEL_CONFIG=configs/yolo11.yaml \
   uv run --locked --no-sync uvicorn ai_inference.service.app:app --host 127.0.0.1 --port 8000 --workers 1
 ```
 
-服务代码位于 `src/ai_inference/service/`，随 `ai-inference` 统一发行。`service` extra 安装 FastAPI、Uvicorn 和 multipart 依赖，可与任一后端 extra 组合。环境变量中的配置路径相对进程工作目录，YAML 内的权重路径仍相对 YAML 目录。
+服务代码位于 `src/ai_inference/service/`，随 `ai-inference` 统一发行。`service` extra 安装 FastAPI、Uvicorn、multipart 和 httpx 依赖，可与任一后端 extra 组合。环境变量中的配置路径相对进程工作目录，YAML 内的权重路径仍相对 YAML 目录。
 
-安装 CPU 服务使用 `python -m pip install 'ai-inference[service,onnx-cpu]==0.2.2'`；GPU 服务选择 `service,onnx-gpu-cu12` 或 `service,onnx-gpu-cu13`，环境要求见 [CUDA 部署说明](../configuration.md#cuda-部署与失败)。`0.2.2` 发布前使用上面的源码安装方式。安装后可从其他目录运行 `uvicorn ai_inference.service.app:app`，部署时建议使用绝对配置路径。纯 SDK 使用者无需安装 `service` extra，基础导入不加载 HTTP 框架。
+Ascend 服务的 uv 环境使用 `uv sync --locked --no-default-groups --extra service --extra ascend`，重复同步仍选择相同 extra，保留严格必需的 `aclruntime` 与 `ais_bench`。安装和运行之间不执行省略后端选择的 `uv sync`；开发时去掉 `--no-default-groups` 即可保留测试与检查工具。
+
+源码 pip、Release wheel、自行构建及离线安装见 [安装指南](../installation.md)，安装时组合 `service` 与一个后端 extra，例如 `[service,onnx-cpu]` 或 `[service,onnx-gpu-cu11]`。环境要求见 [CUDA 部署说明](../configuration.md#cuda-部署与失败)。安装后可从其他目录运行 `uvicorn ai_inference.service.app:app`，部署时建议使用绝对配置路径。纯 SDK 使用者无需安装 `service` extra，基础导入不加载 HTTP 框架。
 
 启动阶段加载模型，按模型 YAML 的 `runtime.warmup` 设置预热；加载失败则启动失败。不要使用多个 worker 扩容同一设备：每个 worker 都会独立加载模型。单进程只接纳一个推理请求，包含输入解析、下载、解码、推理和响应发送；忙时立即返回 503，不排队。健康检查不等待推理。推理在工作线程执行，SDK 当前没有统一的显式 `close()` 接口，停止时释放服务持有的模型引用，设备资源最终由进程退出回收。
 
@@ -117,7 +119,7 @@ URL 仅允许标准端口的公网 HTTP/HTTPS。拒绝凭据、内网/回环/链
 ## 验证
 
 ```bash
-uv sync --locked --extra service
+uv sync --locked --extra service --extra onnx-cpu
 uv run --locked --no-sync python -m pytest tests/test_service.py -q
 ```
 

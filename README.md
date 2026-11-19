@@ -6,44 +6,41 @@
 
 ## 安装
 
-Python ≥3.10。当前版本为 **0.2.2**，变更见 [CHANGELOG](CHANGELOG.md)。以下命令用于 `0.2.2` 发行版；发布前可先[从源码安装](#开发与验证)。
+Python ≥3.10，已验证 Python 3.10 / 3.11 / 3.12。当前源码版本为 **0.2.3**，变更见 [CHANGELOG](CHANGELOG.md)。推荐从源码使用 uv 安装，Quick Start 选择 CPU；GPU 或 Ascend 部署应按目标环境选择后端。
 
-选择一个推理后端，在独立虚拟环境中安装：
+| 安装方式 | 适用场景 | 说明 |
+| --- | --- | --- |
+| [源码 + uv（推荐）](docs/installation.md#11-使用-uv推荐) | 示例体验、开发、可复现部署 | 使用仓库锁文件，显式选择 Python 与后端 |
+| [源码 + pip](docs/installation.md#12-使用-pip-本地安装) | 已有 Python 环境 | 支持普通安装和可编辑安装 |
+| [Release wheel](docs/installation.md#21-从-release-安装) | 安装已发布 SDK | 下载指定版本 wheel，选择后端 extra |
+| [自行构建 wheel](docs/installation.md#22-自行构建) | 内部分发、定制版本 | 从源码构建后安装 |
+| [离线安装](docs/installation.md#23-离线安装) | 无网络的目标环境 | 提前准备 SDK 和全部依赖 wheel |
 
-```bash
-# CPU，包括 macOS
-python -m pip install 'ai-inference[onnx-cpu]==0.2.2'
+后端选择、HTTP 服务、Ascend 厂商包和安装检查见 [完整安装指南](docs/installation.md)；CUDA、cuDNN、CANN 与平台约束见 [配置说明](docs/configuration.md#环境与后端选择)。
 
-# NVIDIA CUDA ≥12.8 / cuDNN 9，Linux x86_64 或 Windows x64
-python -m pip install 'ai-inference[onnx-gpu-cu12]==0.2.2'
+## Quick Start
 
-# NVIDIA CUDA ≥13.0 / cuDNN 9，Python ≥3.11
-# Linux x86_64 / ARM64 或 Windows x64
-python -m pip install 'ai-inference[onnx-gpu-cu13]==0.2.2'
-```
-
-**Linux ARM64（aarch64）的 NVIDIA GPU 环境需要 CUDA ≥13.0、cuDNN 9、Python ≥3.11 和 glibc ≥2.34。** Python 3.10 或 CUDA 12 的 ARM64 环境需要设备厂商提供的兼容运行时或自行构建。Jetson 还需核对 JetPack、驱动和 GPU 型号；ARM64 wheel 本身不保证设备兼容。
-
-GPU extra 不会检测本机 CUDA，也不安装 NVIDIA 驱动或系统 CUDA/cuDNN。不支持的 Python/平台组合可能跳过 GPU 依赖；安装成功后仍须验证真实 CUDA 推理。详细要求见 [CUDA 部署说明](docs/configuration.md#cuda-部署与失败)。旧 `onnx-gpu` 保留为兼容入口，新部署建议选择明确的 CUDA 系列。请只安装一个后端，不要混装 CPU 和 GPU 运行时。
-
-需要 HTTP 服务时，组合 `service` 与所选后端：
+以下命令在 macOS / Linux shell 中执行，使用 CPU 运行 YuNet 人脸检测，无需自行导出模型。先安装 [uv](https://docs.astral.sh/uv/getting-started/installation/)，再获取源码并安装运行依赖：
 
 ```bash
-python -m pip install 'ai-inference[service,onnx-cpu]==0.2.2'
-# GPU 服务也可组合 service,onnx-gpu-cu12 或 service,onnx-gpu-cu13
+git clone https://github.com/Jasper-T/ai-inference.git
+cd ai-inference
+uv sync --locked --python 3.12 --no-default-groups --extra onnx-cpu
 ```
 
-基础安装不引入 FastAPI/Uvicorn，`service` extra 安装 HTTP 依赖。启动方法见 [HTTP 服务](docs/service/README.md)。
-
-Ascend 需要自行准备 CANN、驱动和设备环境，并安装 SDK 与独立的厂商依赖：
+下载与示例配置对应的 YuNet ONNX 权重，再运行仓库自带图片示例：
 
 ```bash
-python -m pip install 'ai-inference==0.2.2'
-# 从对应版本源码取得 requirements/ascend.txt 后执行
-python -m pip install -r requirements/ascend.txt
+mkdir -p models
+curl -fL --retry 3 \
+  https://media.githubusercontent.com/media/opencv/opencv_zoo/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx \
+  -o models/face_detection_yunet_2023mar.onnx
+uv run --locked --no-sync python examples/yunet.py
 ```
 
-[Ascend 依赖文件](requirements/ascend.txt) 支持 Linux x86_64 / aarch64、CPython 3.10–3.12；其他环境需自行准备兼容运行时。`ascend` 保留为空的兼容 extra。模型文件不随包分发，示例 YAML 见 [configs](configs)，权重准备见 [模型下载](docs/model-downloads.md)。
+结果保存为 `results/example_yunet.png`；图片中没有符合阈值的人脸时，检测结果可以为空。模型来源、SHA256 和许可见 [模型下载](docs/model-downloads.md)。模型权重不随 SDK 分发；wheel 用户需另行取得对应版本的配置和示例，具体见安装指南。
+
+需要 HTTP 服务时，安装 `service` 与一个后端，例如 `uv sync --locked --python 3.12 --no-default-groups --extra service --extra onnx-cpu`，再按 [HTTP 服务](docs/service/README.md) 启动。
 
 ## 检测调用
 
@@ -122,28 +119,29 @@ Plotter().save("results/annotation.png", image, result, names={0: "person"})
 准备五个模型后，可对同一图片执行推理并保存 PNG / JSON：
 
 ```bash
-uv run --locked python scripts/predict_all.py --image tests/bus.jpg --results results
+uv run --locked --no-sync python scripts/predict_all.py --image tests/bus.jpg --results results
 ```
 
 SFace 使用 YuNet 检测的五点；没有有效人脸时输出 `not_run` 状态。最小调用见 [examples](examples/README.md)，完整场景工具见 [scripts](scripts/README.md)。
 
 ## 开发与验证
 
-从仓库根目录使用 [uv](https://docs.astral.sh/uv/) 安装源码和开发依赖。默认开发组包含 CPU ONNX Runtime；GPU / Ascend 环境使用 `--no-default-groups` 并只选择对应后端 extra，具体命令见 [运行环境配置](docs/configuration.md#cuda-部署与失败)。
+从仓库根目录使用 [uv](https://docs.astral.sh/uv/) 安装源码和开发依赖。默认 `dev` 组包含测试和发布检查工具，不安装 CPU/GPU 推理后端。CPU、CUDA、Ascend 均显式选择后端；开发环境可保留默认组，纯运行环境添加 `--no-default-groups`。安装方式见 [完整安装指南](docs/installation.md)，后端同步规则见 [环境与后端选择](docs/configuration.md#环境与后端选择)。
 
 ```bash
-uv sync --locked --extra service
+uv sync --locked --extra service --extra onnx-cpu
 uv lock --check
 uv run --locked --no-sync ruff check src tests scripts examples
 uv run --locked --no-sync ruff format --check src tests scripts examples
 uv run --locked --no-sync python scripts/test.py all
-uv build
+uv build --build-constraint .github/build-constraints.txt
 ```
 
-以上命令同时验证 SDK 和服务；只验证基础 SDK 时可不启用 `service` extra，服务测试会在缺少 HTTP 依赖时跳过。服务说明见 [HTTP 服务](docs/service/README.md)。新增运行依赖用 `uv add`，开发工具用 `uv add --dev`，测试依赖用 `uv add --group test`，并提交 `pyproject.toml` 和 `uv.lock`。
+以上命令同时验证 SDK 和服务；不启用 `service` extra 时服务测试会跳过。无 ORT 的 Ascend 开发环境运行 `scripts/test.py quick` 与 `smoke`；完整 `all`/`ort` 需要所选 ONNX Runtime 后端。服务说明见 [HTTP 服务](docs/service/README.md)。新增运行依赖用 `uv add`，开发工具用 `uv add --dev`，测试依赖用 `uv add --group test`，并提交 `pyproject.toml` 和 `uv.lock`。修改 Ascend 厂商来源后先运行 `uv lock`，再运行 `python scripts/ascend_requirements.py`，从锁文件哈希同步生成 pip 安装文件。
 
 ## 文档
 
+- [安装指南](docs/installation.md)：源码、Release wheel、自行构建、离线安装与后端选择。
 - [CHANGELOG](CHANGELOG.md)：版本变化与升级迁移。
 - [模型下载](docs/model-downloads.md)：各配置对应的官方权重、ONNX 文件与导出方式。
 - [源码目录与职责](docs/architecture.md)：组件职责与执行边界。

@@ -4,15 +4,17 @@
 
 | 工具 | 用途与调用 |
 | --- | --- |
-| smoke.py | 无权重的共享管道检查：`uv run --locked python scripts/smoke.py` |
-| predict_all.py | 同一图像调用五个模型并独立标注：`uv run --locked python scripts/predict_all.py --image tests/bus.jpg --results results` |
+| smoke.py | 无权重的共享管道检查：`uv run --locked --no-sync python scripts/smoke.py` |
+| predict_all.py | 同一图像调用五个模型并独立标注：`uv run --locked --no-sync python scripts/predict_all.py --image tests/bus.jpg --results results` |
 | verify_predictions.py | YOLO真实权重参考对照，输出JSON误差报告 |
 | verify_faces.py | YuNet/SFace与OpenCV参考API对照 |
 | verify_rtdetr.py | RT-DETR ONNX与官方PyTorch模型对照 |
 | export_rfdetr.py | 官方 Nano COCO checkpoint 导出并验证 ONNX 原始输出：`python scripts/export_rfdetr.py` |
 | export_rtdetr.py | 本地官方checkpoint导出，输出ONNX和导出记录 |
-| clean_python_cache.py | 清理仓库 __pycache__ / pyc / pyo：`uv run --locked python -B scripts/clean_python_cache.py` |
-| test.py | 维护测试的便捷入口：`uv run --locked python scripts/test.py all`，另支持quick、smoke、ort |
+| clean_python_cache.py | 清理仓库 __pycache__ / pyc / pyo：`uv run --locked --no-sync python -B scripts/clean_python_cache.py` |
+| test.py | 维护测试的便捷入口：`uv run --locked --no-sync python scripts/test.py all`，另支持quick、smoke、ort |
+| ascend_requirements.py | 从 Ascend extra 的 wheel 来源和锁定哈希生成 pip 依赖清单；`--check` 检查文件是否一致 |
+| check_dist.py | 检查 wheel/sdist 元数据、全新 wheel 安装和解压后的源码包完整测试；`uv run --locked --no-sync python scripts/check_dist.py dist`；只检查，不发布 |
 
 调用示例、依赖、容差及验证边界见 [测试说明](../docs/testing.md)。smoke本身不需要pytest或ONNX权重，只需基础SDK依赖；test.py的all/quick/ort需要相应测试依赖。
 
@@ -24,7 +26,7 @@ processing_reference.py仅供参考对照脚本读取标准步骤参数，实际
 
 ## 独立性能测量
 
-`uv run --locked python scripts/benchmark.py --config configs/yolo11.yaml --runs 20 --warmup 3`
+`uv run --locked --no-sync python scripts/benchmark.py --config configs/yolo11.yaml --runs 20 --warmup 3`
 
 默认使用本地YOLO11和tests/bus.jpg。工具包装Model公开接口，不继承Model，输出阶段和总耗时的mean/P50/P95/min/max及真实样本吞吐；初始化和预热不计入。详见[日志与性能测量](../docs/logging-and-benchmark.md)。CLI接受普通图片模型；SFace等需要FaceInput的模型通过Python接口传入已准备的输入。
 
@@ -32,8 +34,14 @@ benchmark默认只显示终端表格。添加 `--save results/benchmark_yolo11.j
 
 ## uv 与缓存清理
 
-开发环境先执行 `uv sync --locked`。导出工具在各自参考依赖环境执行，不将 PyTorch/Ultralytics 加入 SDK 生产依赖。
+CPU 开发环境先执行 `uv sync --locked --extra onnx-cpu`。`uv sync --locked` 仅安装 SDK 与开发工具；不安装 ORT 时使用 quick/smoke 验证。导出工具在各自参考依赖环境执行，不将 PyTorch/Ultralytics 加入 SDK 生产依赖。
 
-需要清理缓存时运行 `uv run --locked python -B scripts/clean_python_cache.py`；添加 `--dry-run` 仅检查缓存。工具清理整个仓库（包括本地环境）的 Python 字节码，跳过 `.git` 与符号链接。
+需要清理缓存时运行 `uv run --locked --no-sync python -B scripts/clean_python_cache.py`；添加 `--dry-run` 仅检查缓存。工具清理整个仓库（包括本地环境）的 Python 字节码，跳过 `.git` 与符号链接。
 
-仅验证 SDK 时使用 `uv run --locked python scripts/test.py all -- --ignore=tests/test_service.py`；包含服务的完整验证先执行 `uv sync --locked --extra service`，服务测试见 [服务说明](../docs/service/README.md#验证)。
+仅验证 SDK 时使用 `uv run --locked --no-sync python scripts/test.py all -- --ignore=tests/test_service.py`；包含服务的完整验证先执行 `uv sync --locked --extra service --extra onnx-cpu`，服务测试见 [服务说明](../docs/service/README.md#验证)。
+
+## 发行包验收
+
+执行 `uv build --build-constraint .github/build-constraints.txt` 后运行 `uv run --locked --no-sync python scripts/check_dist.py dist`。检查脚本在临时环境中安装基础 wheel 和 HTTP/CPU wheel，再解压 sdist，仅用归档内的文件安装锁定的测试依赖并执行 `scripts/test.py all`。检查会下载依赖，结束后自动清理临时环境。
+
+源码包内的 `test_release_requires_acceptance_of_selected_tag` 读取工作流配置，检查发布任务必须依赖目标 tag 的验收；它不启动 GitHub Actions。`check_dist.py` 可独立在本地运行，现有 Package acceptance 和 GitHub Release 工作流也执行同一检查，任何失败都会阻止后续发布。

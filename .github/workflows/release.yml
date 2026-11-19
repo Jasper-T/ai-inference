@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing version tag (e.g. v0.2.2)
+        description: Existing version tag (e.g. v0.2.3)
         required: true
         type: string
       publish_to:
@@ -76,7 +76,7 @@ jobs:
             exit 1
           fi
           if python3 -c 'import tomllib; import sys; sys.exit(0 if "service" in tomllib.load(open("pyproject.toml", "rb"))["project"].get("optional-dependencies", {}) else 1)'; then
-            uv sync --locked --extra service
+            uv sync --locked --extra service --extra onnx-cpu
             uv run --locked --no-sync python -c 'import ai_inference.service.app; import httpx'
           else
             uv sync --locked
@@ -84,6 +84,9 @@ jobs:
           uv lock --check
           uv run --locked --no-sync ruff check src tests scripts examples
           uv run --locked --no-sync ruff format --check src tests scripts examples
+          if [ -f scripts/ascend_requirements.py ]; then
+            uv run --locked --no-sync python scripts/ascend_requirements.py --check
+          fi
           uv run --locked --no-sync python scripts/test.py all -- -rs
           uv run --locked --no-sync ruff check ../tooling/scripts/release.py ../tooling/tests/test_release.py
           uv run --locked --no-sync ruff format --check ../tooling/scripts/release.py ../tooling/tests/test_release.py

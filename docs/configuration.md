@@ -97,43 +97,108 @@ runtime:
     padding: repeat_last
 ```
 
+## 最低依赖组合
+
+当前源码最低使用 Python 3.10；`X | Y` 类型注解和运行时类型别名需要该版本，不能只修改 `requires-python` 来支持 Python 3.9 或 3.8。
+
+共享依赖的下限以 ORT 与 HTTP 服务同时可用为标准，在 CPython 3.10–3.12 下验证官方编译包 wheel 和 SDK、CPU 推理、HTTP 服务回归。验收组合使用 CPU ORT 1.18.0、FastAPI 0.115.0、Uvicorn 0.30.0 和 python-multipart 0.0.18；共享依赖如下。
+
+| 依赖 | Python 3.10 | Python 3.11 | Python 3.12 |
+| --- | --- | --- | --- |
+| NumPy | 1.21.6 | 1.24.2 | 1.26.0 |
+| opencv-python-headless | 3.4.16.59 | 3.4.17.61 | 3.4.17.61 |
+| PyYAML | 6.0 | 6.0 | 6.0.1 |
+| Pydantic | 2.0.2 | 2.0.2 | 2.0.2 |
+| Pillow | 9.1.0 | 9.2.0 | 10.0.0 |
+| Loguru | 0.2.2 | 0.2.2 | 0.4.0 |
+
+固定组合见 [requirements/minimum.txt](../requirements/minimum.txt)，验证方法见 [最低依赖验收](testing.md#最低依赖验收)。这些是支持的二进制安装下限，不代表更早版本在自行编译或局部调用中必然失败。Python 3.13 及更新版本未包含在最低组合验收矩阵中。
+
+所有后端统一约束 NumPy <2、OpenCV <4.12，保留 OpenCV 3.4 的最低版本兼容性。旧 OpenCV 的编译扩展不能与 NumPy 2 混用；OpenCV 4.12 起的包会要求 NumPy 2。只降低某个包而保留另一个包的新版，可能在依赖安装成功后仍出现二进制接口不兼容。最低组合和锁定组合都遵守同一上限。
+
+## 环境与后端选择
+
+源码、Release wheel、自行构建及离线部署的完整步骤见 [安装指南](installation.md)。
+
+`test` 组提供 pytest、HTTP 客户端和 ONNX 图生成工具；默认 `dev` 组额外提供 Ruff、Twine 和维护脚本依赖。两个组均不安装 CPU ORT，可以与 GPU 或 Ascend 后端同时使用。
+
+Python 通过 uv 自带的 `--python` 选择，与后端 extra 独立，不需要 `py310` / `py311` / `py312` 分组。依赖声明中的 `python_version` 条件会自动选择适用的范围；不同 Python 也可以解析到同一兼容版本。普通开发/部署使用 `uv.lock` 的锁定版本，最低版本组合仅用于兼容性验收。
+
+```bash
+# CPU 开发环境，包含 SDK/服务完整测试所需的工具
+uv sync --locked --extra service --extra onnx-cpu
+# CUDA 11 开发环境，保留开发工具而不安装 CPU ORT 包
+uv sync --locked --python 3.10 --extra service --extra onnx-gpu-cu11
+# Ascend 开发环境，不安装任何 ORT 包
+uv sync --locked --python 3.12 --extra service --extra ascend
+# 纯运行环境：在所选命令上添加 --no-default-groups
+```
+
+重复同步时继续选择相同的后端；`uv sync` 默认精确同步，未选择的后端会被移除。运行命令统一使用 `uv run --locked --no-sync ...`，复用已选择的环境。GPU/Ascend 开发者可以运行 `scripts/test.py quick` 和 `smoke`；`all`/`ort` 包含实际 CPU Execution Provider 测试，需安装可用的 ONNX Runtime 发行包。
+
+Pydantic 需要 V2 的 `model_validator` 等 API；Pillow 使用的 `Image.Resampling` 从 [9.1.0](https://pillow.readthedocs.io/en/stable/releasenotes/9.1.0.html) 起提供；Loguru 0.2.1 尚无 SDK 使用的 `add` / `remove` 接口，0.2.2 才提供。Python 3.12 移除了 `distutils`，Loguru 0.2.x 的异常格式化依赖以及 0.3.x 本身会因此导入失败，所以该版本的下限为 0.4.0。其余随 Python 提高的下限同时考虑 NumPy、Pillow、PyYAML 和 `pydantic-core` 的 wheel 可用性；发行文件可在 [PyPI](https://pypi.org/) 核对。
+
+CPU ORT 1.18.0 在 Python 3.10 要求 NumPy ≥1.21.6，Python 3.11 要求 NumPy ≥1.24.2；FastAPI 0.115.0 排除了 Pydantic 2.0.0、2.0.1 和 2.1.0，因此统一使用 Pydantic ≥2.0.2。这些要求已纳入 `project.dependencies`，基础安装也采用同一下限。ORT 与 HTTP 包仍通过各自的 extra 安装；cu12/cu13 及较新 ORT 若有更高要求，由安装工具取约束交集。cu11 仍要求 NumPy <2、OpenCV <4.12。
+
+上述旧版 OpenCV 覆盖 SDK 的图像处理和绘制 API；`scripts/verify_faces.py` 的官方 YuNet/SFace 对照工具额外需要提供 `FaceDetectorYN` / `FaceRecognizerSF` 的 OpenCV 4.x。最低组合测试包含合成引擎与 CPU ONNX 图，不等同于 CUDA、Ascend、真实权重或数据集精度验收。
+
 ## CUDA 部署与失败
 
-`0.2.2` 提供以下选择，当前待发布；旧版 `0.2.1` 的 PyPI 发行已删除，发布前请从仓库源码安装：
+`0.2.3` 提供以下选择；发布前可从当前仓库源码安装。`0.2.2` 的发行包不包含 `onnx-gpu-cu11`，旧 `onnx-gpu` 入口需迁移为明确的 CUDA 系列：
 
 | Extra | ORT 范围 | 环境要求 |
 | --- | --- | --- |
+| `onnx-gpu-cu11` | `==1.18.1` | CUDA 11.x、cuDNN 8；Linux x86_64（glibc ≥2.27）/ Windows x64，Python 3.10–3.12；NumPy <2、OpenCV <4.12 |
 | `onnx-gpu-cu12` | `>=1.21,<1.27` | CUDA ≥12.8、cuDNN 9；Linux x86_64 / Windows x64，Python ≥3.10 |
 | `onnx-gpu-cu13` | `>=1.29,<1.32` | CUDA ≥13.0、cuDNN 9；Linux x86_64 / aarch64、Windows x64，Python ≥3.11；Linux aarch64 还要求 glibc ≥2.34 |
-| `onnx-gpu` | `>=1.18,<2` | 保留旧安装入口；不保证与本机 CUDA 系列匹配，需自行约束 ORT 版本 |
 
 CUDA 与 cuDNN 要求依据 [官方兼容表](https://onnxruntime.ai/docs/execution-providers/CUDA-ExecutionProvider.html)。边界版本变化需要重新验收后调整范围，不自动扩展到未来 CUDA 系列。
 
-在仓库中使用 `uv sync --locked --no-default-groups --extra onnx-gpu-cu12` 或 `uv sync --locked --python 3.12 --no-default-groups --extra onnx-gpu-cu13`，避免与默认测试组的 CPU ORT 混装。实际 ORT 版本见 `uv.lock`；显卡驱动、CUDA 和 cuDNN 仍须自行准备。pip 安装源码时可使用 `python -m pip install '.[onnx-gpu-cu13]'`，服务环境组合为 `'.[service,onnx-gpu-cu13]'`。
+### CUDA 11 安装
 
-extras 使用 Python/平台条件排除不支持的组合。比如 ARM64 上选择 cu12、Python 3.10 上选择 cu13、macOS 上选择任一 CUDA extra，安装工具可能跳过 GPU 依赖并成功退出；这不代表该环境支持 GPU。先核对上表，再检查 ORT 是否实际安装，并执行严格 CUDA 模型推理。CPU、cu12、cu13、旧 `onnx-gpu`、Ascend 在 uv 中互斥；pip 不强制该互斥，不要组合安装。
+`onnx-gpu-cu11` 固定 PyPI 的 ONNX Runtime GPU 1.18.1（CUDA 11.8 构建、cuDNN 8），并约束 NumPy <2 和 OpenCV <4.12，避免旧 ORT 与 NumPy 2 的 ABI 冲突以及新版 OpenCV 对 NumPy 2 的要求。新增入口发布前从仓库根目录安装：
+
+```bash
+python -m pip install '.[onnx-gpu-cu11]'
+# HTTP 服务
+python -m pip install '.[service,onnx-gpu-cu11]'
+# 或使用锁定依赖，仅安装运行包
+uv sync --locked --python 3.12 --no-default-groups --extra onnx-gpu-cu11
+```
+
+官方说明 CUDA 11.8 构建可通过 CUDA 次版本兼容机制用于 CUDA 11.x；CUDA 11.2 + cuDNN 8 属于待实机验收的部署组合，并不代表所有驱动、cuDNN 8 小版本或模型均已验证。需准备兼容的 NVIDIA 驱动以及 ORT 所需的 CUDA/cuDNN 动态库。SDK 不依赖 PyTorch，PyTorch 的 CUDA 版本不决定 ORT 实际加载的动态库。
+
+模型的 ONNX IR、opset 和算子需兼容 ORT 1.18.1；由较新导出工具生成的模型不能仅凭文件扩展名判断兼容。将模型 YAML 的 `runtime.options.providers` 设置为 `cuda`，执行真实模型的初始化、warmup 和推理，再核对结果与性能。`get_available_providers()` 包含 CUDA 仅表示该包编译了 CUDA 支持。普通 CI 的安装检查不代表 CUDA 11.2 的 GPU 实机验收。
+
+CUDA 11 extra 不提供 Linux ARM64、macOS 或 Python ≥3.13 的 GPU wheel；这些组合会跳过 cu11 依赖，安装成功不能视为 GPU 可用。需要设备厂商运行时或自行构建的环境应单独验收。
+
+### 后端安装约束
+
+在仓库中使用 `uv sync --locked --no-default-groups --extra onnx-gpu-cu12` 或 `uv sync --locked --python 3.12 --no-default-groups --extra onnx-gpu-cu13` 安装纯运行环境；开发时去掉 `--no-default-groups` 即可保留开发工具。实际 ORT 版本见 `uv.lock`；显卡驱动、CUDA 和 cuDNN 仍须自行准备。pip 安装源码时可使用 `python -m pip install '.[onnx-gpu-cu13]'`，服务环境组合为 `'.[service,onnx-gpu-cu13]'`。
+
+extras 使用 Python/平台条件排除不支持的组合。比如 ARM64 上选择 cu11/cu12、Python 3.10 上选择 cu13、macOS 上选择任一 CUDA extra，安装工具可能跳过 GPU 依赖并成功退出；这不代表该环境支持 GPU。先核对上表，再检查 ORT 是否实际安装，并执行严格 CUDA 模型推理。CPU、cu11、cu12、cu13、Ascend 在 uv 中两两互斥；`service`、`dev`、`test` 可以与选定后端组合。pip 不强制该互斥，不要组合安装多个后端。旧 `onnx-gpu` 已移除，必须迁移为明确的 CUDA 系列。
 
 ### Linux ARM64 GPU 安装
 
-`0.2.2` 的 Linux ARM64 环境使用 `onnx-gpu-cu13`（旧 `onnx-gpu` 仅保留为兼容入口）；与 x86_64 的运行时要求不同。截至 2026-10-15，PyPI 上的 `onnxruntime-gpu` 从 1.29.0 开始提供 Linux aarch64 wheel；当前 1.31.0 的 ARM64 wheel 要求 CPython ≥3.11、glibc ≥2.34，GPU 运行需要 CUDA ≥13.0、cuDNN 9 和兼容的 NVIDIA 驱动。文件标签见 [PyPI 发行文件](https://pypi.org/project/onnxruntime-gpu/1.31.0/#files)，CUDA 与 cuDNN 要求见上面的官方兼容表。
+`0.2.3` 的 Linux ARM64 环境使用 `onnx-gpu-cu13`，与 x86_64 的运行时要求不同。截至 2026-10-15，PyPI 上的 `onnxruntime-gpu` 从 1.29.0 开始提供 Linux aarch64 wheel；当前 1.31.0 的 ARM64 wheel 要求 CPython ≥3.11、glibc ≥2.34，GPU 运行需要 CUDA ≥13.0、cuDNN 9 和兼容的 NVIDIA 驱动。文件标签见 [PyPI 发行文件](https://pypi.org/project/onnxruntime-gpu/1.31.0/#files)，CUDA 与 cuDNN 要求见上面的官方兼容表。
 
 ARM64 的 Python 3.10 或 CUDA 12 环境不能直接使用这些 PyPI GPU wheel；需要匹配设备的厂商构建或自行编译，不能用 CPU 包代替 GPU 包。Jetson 须另外核对 JetPack、驱动、CUDA/cuDNN 和 GPU 型号，wheel 的 aarch64 标签本身不保证设备兼容。macOS ARM64 不使用 NVIDIA CUDA extra，应使用 `onnx-cpu`。
 
 在已准备好上述系统环境的 Linux ARM64 设备上安装：
 
 ```bash
-# 待 0.2.2 发布到 PyPI 后，安装 SDK 与 CUDA 13 GPU 运行时
+# 待 0.2.3 发布到 PyPI 后，安装 SDK 与 CUDA 13 GPU 运行时
 uv venv --python 3.12
-uv pip install --python .venv/bin/python 'ai-inference[onnx-gpu-cu13]==0.2.2'
+uv pip install --python .venv/bin/python 'ai-inference[onnx-gpu-cu13]==0.2.3'
 
-# 或在本仓库明确选择 CUDA 13 环境（0.2.2 extra）
+# 或在本仓库明确选择 CUDA 13 环境（0.2.3 extra）
 uv sync --locked --python 3.12 --no-default-groups --extra onnx-gpu-cu13
 
 # 查看实际 ORT 版本与已编译的 providers
 .venv/bin/python -c 'import onnxruntime as ort; print(ort.__version__); print(ort.get_available_providers())'
 ```
 
-`onnx-gpu` 不自动检测本机 CUDA，也不安装 NVIDIA 驱动或系统 CUDA/cuDNN。`get_available_providers()` 包含 `CUDAExecutionProvider` 只表示该包编译了 CUDA 支持；还必须在模型 YAML 中设置 `runtime.options.providers: cuda`，执行真实模型推理，确认动态库能加载、会话可初始化且设备能运行。普通 CPU CI 的安装验收不代表 GPU 实机验证通过。
+CUDA 系列 extra 不自动检测本机 CUDA，也不安装 NVIDIA 驱动或系统 CUDA/cuDNN。`get_available_providers()` 包含 `CUDAExecutionProvider` 只表示该包编译了 CUDA 支持；还必须在模型 YAML 中设置 `runtime.options.providers: cuda`，执行真实模型推理，确认动态库能加载、会话可初始化且设备能运行。普通 CPU CI 的安装验收不代表 GPU 实机验证通过。
 
 OpenCV 前后处理仍在 CPU 执行。目标设备应单独验证 provider 初始化、真实权重 warmup、显存、延迟和结果一致性；provider 降级及执行失败行为见上文“执行设备”。
 
@@ -277,6 +342,13 @@ SDK同时保留Pipeline步骤、模型解码契约和执行边界的张量校验
 
 `runtime.backend: om` 使用 `ais_bench.infer.interface.InferSession`，`runtime.options.device_id` 默认 0。
 在目标 Ascend 环境安装兼容的 CANN、ACLRuntime 和 ais_bench；SDK 基础依赖不安装这些厂商组件。
+
+OM 推理严格依赖 `aclruntime` 与 `ais_bench`，缺少任一包时初始化报错，不回退到其他后端。`ascend` extra 明确声明这两个运行依赖；仓库内使用 `uv sync --locked --extra ascend` 即可安装开发环境。部署环境添加 `--no-default-groups`，HTTP 服务添加 `--extra service`。重复同步仍选择同一 extra，保留厂商运行时。
+
+`tool.uv.sources` 为 `ascend` 指定按 Python/架构选择的厂商 wheel，`uv.lock` 固定其 SHA256 和间接依赖。发布元数据只声明普通包名和固定版本，不包含厂商 URL。Python 3.10/3.11 的 ACLRuntime 构建提交为 `e7b397d84ef565e62e3a4a20b6022e901b8fd801`，Python 3.12 的构建提交为 `8da7f6455bb122ca38b50e625fb7751c7e190ed1`；ais_bench 构建提交为 `e7b397d84ef565e62e3a4a20b6022e901b8fd801`。相同的 0.0.2 版本号不代表 wheel 的构建相同。
+
+修改厂商来源后先运行 `uv lock`，再运行 `python scripts/ascend_requirements.py`，从来源声明和锁定哈希生成 `requirements/ascend.txt`，不手动维护第二份来源。pip 不读取 uv 来源配置，源码安装使用 `python -m pip install '.[ascend]' -r requirements/ascend.txt`，同时满足 extra 的依赖与 wheel 来源。CANN、宿主机驱动、设备型号仍须在目标环境匹配并验证，不由 Python 锁文件安装或验收。
+
 当前仅支持静态固定 batch，调用 `InferSession(device_id, model_path).infer(feeds)`。
 与 ONNX Runtime 一样，OM 按加载会话 → 读取元数据 → 解析张量契约 → 推理的结构执行；两者共用 BaseEngine 的契约解析、张量校验和 warmup。
 通过 `get_inputs()` / `get_outputs()` 读取模型真实名称、dtype 和 shape；`inputs` / `outputs` 可省略，或作为可选预期约束。显式 YAML 的顺序不影响执行，输入列表和输出绑定始终使用会话的真实顺序。

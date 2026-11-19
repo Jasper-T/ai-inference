@@ -65,7 +65,7 @@ Plotter 共用应用配置的 logger、sink 和 `log_context`，透传 `request_
 性能测量位于 `scripts/benchmark.py`，包装已有Model的公开接口，不继承Model，不依赖私有方法。核心SDK没有阶段计时。
 
 ```bash
-uv run --locked python scripts/benchmark.py --config configs/yolo11.yaml --image tests/bus.jpg --runs 20 --warmup 3 --samples 1
+uv run --locked --no-sync python scripts/benchmark.py --config configs/yolo11.yaml --image tests/bus.jpg --runs 20 --warmup 3 --samples 1
 ```
 
 默认使用本仓库YOLO11配置及bus.jpg；默认路径不依赖当前工作目录。`--samples`表示每次调用输入的图片数量，复用同一张图片；固定/动态batch策略仍由模型配置决定。

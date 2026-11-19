@@ -1,4 +1,4 @@
-"""Check PyPI distribution metadata, then install the wheel in clean environments.
+"""Check metadata, clean wheel installs and the extracted source distribution's tests.
 
 Requires uv on PATH. This command never uploads artifacts.
 """
@@ -48,8 +48,15 @@ def check_artifacts(directory):
         if stream is None:
             raise ValueError("sdist must contain PKG-INFO")
         source_metadata = check_metadata(stream.read(), archive.getnames(), root + "/LICENSE")
-        if root + "/requirements/ascend.txt" not in archive.getnames():
-            raise ValueError("sdist must include the standalone Ascend requirements")
+        required = (
+            "requirements/ascend.txt",
+            ".github/build-constraints.txt",
+            ".github/workflows/package.yml",
+            ".github/workflows/release.yml",
+        )
+        for member in required:
+            if root + "/" + member not in archive.getnames():
+                raise ValueError(f"sdist must include {member}")
     for field in ("Name", "Version", "Requires-Python", "Requires-Dist", "Provides-Extra"):
         if metadata.get_all(field) != source_metadata.get_all(field):
             raise ValueError(f"wheel and sdist disagree on {field}")
@@ -83,13 +90,54 @@ assert all(hasattr(ai_inference, name) for name in ai_inference.__all__)
             subprocess.run(["uv", "pip", "check", "--python", str(python)], check=True)
             code = base
             if extra:
-                code += "\nimport onnxruntime\nfrom ai_inference.service.app import app\n"
+                code += "\nimport httpx\nimport onnxruntime\n"
+                code += "from ai_inference.service.app import app\n"
                 code += "assert app.openapi()['paths']\n"
             else:
                 code += "\nimport importlib.util\n"
                 code += "assert importlib.util.find_spec('fastapi') is None\n"
+                code += "assert importlib.util.find_spec('httpx') is None\n"
                 code += "assert importlib.util.find_spec('onnxruntime') is None\n"
             subprocess.run([str(python), "-I", "-c", code, version], cwd=root, check=True)
+
+
+def check_source(source):
+    # Test only the shipped files, without inheriting the caller's editable install.
+    with tempfile.TemporaryDirectory(prefix="ai-inference-sdist-") as directory:
+        root = Path(directory)
+        with tarfile.open(source) as archive:
+            archive.extractall(root, filter="data")
+        project = root / source.name.removesuffix(".tar.gz")
+        env = dict(os.environ, UV_PROJECT_ENVIRONMENT=str(project / ".venv"))
+        for name in ("PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV"):
+            env.pop(name, None)
+        subprocess.run(
+            [
+                "uv",
+                "sync",
+                "--locked",
+                "--python",
+                sys.executable,
+                "--no-default-groups",
+                "--group",
+                "test",
+                "--extra",
+                "service",
+                "--extra",
+                "onnx-cpu",
+            ],
+            cwd=project,
+            env=env,
+            check=True,
+        )
+        python = project / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+        subprocess.run(["uv", "pip", "check", "--python", str(python)], env=env, check=True)
+        subprocess.run(
+            [str(python), "scripts/test.py", "all", "--", "-rs"],
+            cwd=project,
+            env=env,
+            check=True,
+        )
 
 
 def main():
@@ -98,7 +146,8 @@ def main():
     args = parser.parse_args()
     wheel, version = check_artifacts(args.directory.resolve())
     check_install(wheel, version)
-    print(f"Distribution metadata and clean installs passed: {version}")
+    check_source(next(args.directory.resolve().glob("*.tar.gz")))
+    print(f"Distribution metadata, clean installs and sdist tests passed: {version}")
 
 
 if __name__ == "__main__":

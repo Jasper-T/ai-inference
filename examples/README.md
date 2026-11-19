@@ -2,14 +2,14 @@
 
 模型准备见 [官方模型下载与导出说明](../docs/model-downloads.md)，包含五个默认模型的链接和本地文件名。
 
-示例直接读取本仓库 `models/` 中的本地权重，统一使用 `tests/bus.jpg`；不下载模型或图片。先运行 `uv sync --locked` 安装 SDK 与 CPU ONNX Runtime。以下命令从仓库根目录执行；代码按示例文件位置定位仓库，从其他目录使用脚本绝对路径运行也可：
+示例直接读取本仓库 `models/` 中的本地权重，统一使用 `tests/bus.jpg`；不下载模型或图片。先运行 `uv sync --locked --extra onnx-cpu` 安装 SDK 与 CPU ONNX Runtime。以下命令从仓库根目录执行；代码按示例文件位置定位仓库，从其他目录使用脚本绝对路径运行也可：
 
 ```bash
-uv run --locked python examples/yolo11.py
-uv run --locked python examples/rfdetr.py
-uv run --locked python examples/rtdetr.py
-uv run --locked python examples/yunet.py
-uv run --locked python examples/sface.py
+uv run --locked --no-sync python examples/yolo11.py
+uv run --locked --no-sync python examples/rfdetr.py
+uv run --locked --no-sync python examples/rtdetr.py
+uv run --locked --no-sync python examples/yunet.py
+uv run --locked --no-sync python examples/sface.py
 ```
 
 每个文件直接展示 `import → ROOT → yaml_path → Model → image_path → predict → Plotter.save`，没有额外封装。YAML中的模型路径相对于配置文件解析，均指向本仓库 `models/`。六份默认配置不手写 I/O 张量契约，由 ONNX / OM 引擎发现；步骤名称仍须匹配真实张量。RT-DETR 示例使用动态 batch（每批上限 2），其他 ONNX 示例为固定 batch=1。图片为 BGR，转换和归一化由对应 YAML/处理器负责。结果固定写入本仓库 `results/example_<模型>.png`。
@@ -32,12 +32,12 @@ SFace不是检测模型，额外调用本地YuNet获取五点，同样使用 `te
 
 ## HTTP 服务调用
 
-[service.py](service.py) 调用已经启动的服务，客户端不加载模型。示例使用 `httpx`，仓库默认开发依赖已包含它；独立客户端环境可执行 `pip install httpx`，不需要安装 SDK 或推理后端。
+[service.py](service.py) 调用已经启动的服务，客户端不加载模型。示例使用 `httpx`，`service` extra 和仓库默认开发依赖均包含它；独立客户端环境可执行 `pip install httpx`，不需要安装 SDK 或推理后端。
 
 先在一个终端启动 YOLO CPU 服务（需本地权重）：
 
 ```bash
-uv sync --locked --extra service
+uv sync --locked --extra service --extra onnx-cpu
 AI_INFERENCE_MODEL_CONFIG=configs/yolo11.yaml \
   uv run --locked --no-sync uvicorn ai_inference.service.app:app --host 127.0.0.1 --port 8000 --workers 1
 ```

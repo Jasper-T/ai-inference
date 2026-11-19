@@ -205,7 +205,7 @@ def test_bad_uploaded_bytes_keep_draft(monkeypatch, bundle):
     "extra,python,platform,arch,wheel_platform",
     [
         (extra, python, platform, arch, wheel_platform)
-        for extra in ("onnx-cpu", "onnx-gpu", "onnx-gpu-cu12", "onnx-gpu-cu13")
+        for extra in ("onnx-cpu", "onnx-gpu-cu11", "onnx-gpu-cu12", "onnx-gpu-cu13")
         for python in ("3.10", "3.11", "3.12")
         for platform, arch, wheel_platform in (
             ("win32", "AMD64", "win_amd64"),
@@ -213,8 +213,8 @@ def test_bad_uploaded_bytes_keep_draft(monkeypatch, bundle):
             ("linux", "aarch64", "aarch64"),
         )
         if not (extra == "onnx-gpu-cu13" and python == "3.10")
+        and not (extra == "onnx-gpu-cu11" and arch == "aarch64")
         and not (extra == "onnx-gpu-cu12" and arch == "aarch64")
-        and not (extra == "onnx-gpu" and arch == "aarch64" and python == "3.10")
     ],
 )
 def test_locked_runtime_has_supported_wheel(extra, python, platform, arch, wheel_platform):
@@ -236,7 +236,8 @@ def test_locked_runtime_has_supported_wheel(extra, python, platform, arch, wheel
     selected = [
         dep
         for dep in project["optional-dependencies"][extra]
-        if not dep.get("marker") or Marker(dep["marker"]).evaluate(environment)
+        if dep["name"] in ("onnxruntime", "onnxruntime-gpu")
+        and (not dep.get("marker") or Marker(dep["marker"]).evaluate(environment))
     ]
     assert len(selected) == 1
     dependency = selected[0]
@@ -245,6 +246,28 @@ def test_locked_runtime_has_supported_wheel(extra, python, platform, arch, wheel
         for p in lock["package"]
         if p["name"] == dependency["name"] and p["version"] == dependency["version"]
     )
+    if extra == "onnx-gpu-cu11":
+        from packaging.requirements import Requirement
+
+        extras = release.tomllib.loads((root / "pyproject.toml").read_text())["project"][
+            "optional-dependencies"
+        ]
+        constraints = {Requirement(dep).name: Requirement(dep) for dep in extras[extra]}
+        selected_dependencies = [
+            dep
+            for dep in project["optional-dependencies"][extra]
+            if not dep.get("marker") or Marker(dep["marker"]).evaluate(environment)
+        ]
+        assert {dep["name"] for dep in selected_dependencies} == set(constraints)
+        for dep in selected_dependencies:
+            candidates = [
+                p
+                for p in lock["package"]
+                if p["name"] == dep["name"]
+                and ("version" not in dep or p["version"] == dep["version"])
+            ]
+            assert len(candidates) == 1
+            assert candidates[0]["version"] in constraints[dep["name"]].specifier
     assert any(
         tag.interpreter == "cp" + python.replace(".", "")
         and (
@@ -279,6 +302,17 @@ def test_release_requires_acceptance_of_selected_tag():
 @pytest.mark.parametrize(
     "extra,python,platform,arch,selected",
     [
+        ("onnx-gpu-cu11", python, platform, arch, selected)
+        for python in ("3.10", "3.11", "3.12", "3.13")
+        for platform, arch, supported in (
+            ("linux", "x86_64", True),
+            ("win32", "AMD64", True),
+            ("linux", "aarch64", False),
+            ("darwin", "arm64", False),
+        )
+        for selected in (supported and python != "3.13",)
+    ]
+    + [
         ("onnx-gpu-cu12", "3.10", "win32", "AMD64", True),
         ("onnx-gpu-cu12", "3.12", "linux", "x86_64", True),
         ("onnx-gpu-cu12", "3.12", "linux", "aarch64", False),
@@ -297,14 +331,23 @@ def test_cuda_extra_platform_selection(extra, python, platform, arch, selected):
     extras = release.tomllib.loads((root / "pyproject.toml").read_text())["project"][
         "optional-dependencies"
     ]
-    requirement = Requirement(extras[extra][0])
-    assert (
-        requirement.marker.evaluate(
-            {"python_version": python, "sys_platform": platform, "platform_machine": arch}
+    requirements = [Requirement(dep) for dep in extras[extra]]
+    for requirement in requirements:
+        assert (
+            requirement.marker.evaluate(
+                {"python_version": python, "sys_platform": platform, "platform_machine": arch}
+            )
+            is selected
         )
-        is selected
-    )
-    if extra == "onnx-gpu-cu12":
+    requirement = requirements[0]
+    if extra == "onnx-gpu-cu11":
+        assert str(requirement.specifier) == "==1.18.1"
+        by_name = {dep.name: dep for dep in requirements}
+        assert "1.26.4" in by_name["numpy"].specifier
+        assert "2.0.0" not in by_name["numpy"].specifier
+        assert "4.11.0.86" in by_name["opencv-python-headless"].specifier
+        assert "4.12.0.88" not in by_name["opencv-python-headless"].specifier
+    elif extra == "onnx-gpu-cu12":
         assert "1.23.2" in requirement.specifier
         assert "1.29.0" not in requirement.specifier
     else:
@@ -316,6 +359,8 @@ def test_cuda_extra_platform_selection(extra, python, platform, arch, selected):
 @pytest.mark.parametrize("python", ["3.10", "3.11", "3.12"])
 @pytest.mark.parametrize("arch", ["aarch64", "x86_64"])
 def test_ascend_wheel_selection(python, arch):
+    from urllib.parse import urldefrag
+
     from packaging.requirements import Requirement
 
     root = Path(__file__).resolve().parents[1]
@@ -325,12 +370,14 @@ def test_ascend_wheel_selection(python, arch):
     assert set(extras) == {
         "service",
         "onnx-cpu",
-        "onnx-gpu",
+        "onnx-gpu-cu11",
         "onnx-gpu-cu12",
         "onnx-gpu-cu13",
         "ascend",
     }
-    assert extras["ascend"] == []
+    dependencies = [Requirement(raw) for raw in extras["ascend"]]
+    assert {r.name for r in dependencies} == {"aclruntime", "ais-bench"}
+    assert all(r.url is None and str(r.specifier) == "==0.0.2" for r in dependencies)
     environment = {
         "sys_platform": "linux",
         "platform_machine": arch,
@@ -346,7 +393,7 @@ def test_ascend_wheel_selection(python, arch):
     assert sorted(dep.name for dep in selected) == ["aclruntime", "ais-bench"]
     acl = next(dep for dep in selected if dep.name == "aclruntime")
     cp = "cp" + python.replace(".", "")
-    assert acl.url.endswith(f"-{cp}-{cp}-linux_{arch}.whl")
+    assert urldefrag(acl.url).url.endswith(f"-{cp}-{cp}-linux_{arch}.whl")
 
 
 @pytest.mark.parametrize(

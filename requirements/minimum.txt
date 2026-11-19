@@ -1,0 +1,16 @@
+# Shared lower bounds for ORT 1.18.0 + FastAPI 0.115.0 on CPython 3.10-3.12.
+# Install backend/service extras separately; this file is not a production lockfile.
+# Compiled dependencies use official wheels. Loguru 0.2.2 has a pure-Python sdist dependency.
+numpy==1.21.6; python_version < '3.11'
+numpy==1.24.2; python_version >= '3.11' and python_version < '3.12'
+numpy==1.26.0; python_version >= '3.12'
+opencv-python-headless==3.4.16.59; python_version < '3.11'
+opencv-python-headless==3.4.17.61; python_version >= '3.11'
+PyYAML==6.0; python_version < '3.12'
+PyYAML==6.0.1; python_version >= '3.12'
+pydantic==2.0.2
+Pillow==9.1.0; python_version < '3.11'
+Pillow==9.2.0; python_version >= '3.11' and python_version < '3.12'
+Pillow==10.0.0; python_version >= '3.12'
+loguru==0.2.2; python_version < '3.12'
+loguru==0.4.0; python_version >= '3.12'
