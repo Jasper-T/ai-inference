@@ -9,7 +9,7 @@ version and release notes. HTTP service changes are identified below.
 
 ## Unreleased
 
-## 0.2.3 - 2026-11-19
+## 0.2.4 - 2026-11-19
 
 ### Added
 
@@ -26,6 +26,7 @@ version and release notes. HTTP service changes are identified below.
 
 ### Fixed
 
+- Select the minimum-runtime interpreter path in the step environment, where the GitHub runner context is available.
 - Include `httpx` in the `service` extra so the HTTP client example runs after a runtime-only service installation.
 - Include the package/release workflows and pinned build constraints in the source distribution. Release acceptance now installs and runs the complete test suite from the extracted sdist in an isolated environment.
 

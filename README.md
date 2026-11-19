@@ -6,7 +6,7 @@
 
 ## 安装
 
-Python ≥3.10，已验证 Python 3.10 / 3.11 / 3.12。当前源码版本为 **0.2.3**，变更见 [CHANGELOG](CHANGELOG.md)。推荐从源码使用 uv 安装，Quick Start 选择 CPU；GPU 或 Ascend 部署应按目标环境选择后端。
+Python ≥3.10，已验证 Python 3.10 / 3.11 / 3.12。当前源码版本为 **0.2.4**，变更见 [CHANGELOG](CHANGELOG.md)。推荐从源码使用 uv 安装，Quick Start 选择 CPU；GPU 或 Ascend 部署应按目标环境选择后端。
 
 | 安装方式 | 适用场景 | 说明 |
 | --- | --- | --- |

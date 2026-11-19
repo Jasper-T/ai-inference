@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai-inference"
-version = "0.2.3"
+version = "0.2.4"
 description = "Pipeline-based model inference SDK with a transport-independent engine boundary"
 readme = "README.md"
 requires-python = ">=3.10"

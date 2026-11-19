@@ -144,7 +144,7 @@ CPU ORT 1.18.0 在 Python 3.10 要求 NumPy ≥1.21.6，Python 3.11 要求 NumPy
 
 ## CUDA 部署与失败
 
-`0.2.3` 提供以下选择；发布前可从当前仓库源码安装。`0.2.2` 的发行包不包含 `onnx-gpu-cu11`，旧 `onnx-gpu` 入口需迁移为明确的 CUDA 系列：
+`0.2.4` 提供以下选择；发布前可从当前仓库源码安装。`0.2.2` 的发行包不包含 `onnx-gpu-cu11`，旧 `onnx-gpu` 入口需迁移为明确的 CUDA 系列：
 
 | Extra | ORT 范围 | 环境要求 |
 | --- | --- | --- |
@@ -180,18 +180,18 @@ extras 使用 Python/平台条件排除不支持的组合。比如 ARM64 上选�
 
 ### Linux ARM64 GPU 安装
 
-`0.2.3` 的 Linux ARM64 环境使用 `onnx-gpu-cu13`，与 x86_64 的运行时要求不同。截至 2026-10-15，PyPI 上的 `onnxruntime-gpu` 从 1.29.0 开始提供 Linux aarch64 wheel；当前 1.31.0 的 ARM64 wheel 要求 CPython ≥3.11、glibc ≥2.34，GPU 运行需要 CUDA ≥13.0、cuDNN 9 和兼容的 NVIDIA 驱动。文件标签见 [PyPI 发行文件](https://pypi.org/project/onnxruntime-gpu/1.31.0/#files)，CUDA 与 cuDNN 要求见上面的官方兼容表。
+`0.2.4` 的 Linux ARM64 环境使用 `onnx-gpu-cu13`，与 x86_64 的运行时要求不同。截至 2026-10-15，PyPI 上的 `onnxruntime-gpu` 从 1.29.0 开始提供 Linux aarch64 wheel；当前 1.31.0 的 ARM64 wheel 要求 CPython ≥3.11、glibc ≥2.34，GPU 运行需要 CUDA ≥13.0、cuDNN 9 和兼容的 NVIDIA 驱动。文件标签见 [PyPI 发行文件](https://pypi.org/project/onnxruntime-gpu/1.31.0/#files)，CUDA 与 cuDNN 要求见上面的官方兼容表。
 
 ARM64 的 Python 3.10 或 CUDA 12 环境不能直接使用这些 PyPI GPU wheel；需要匹配设备的厂商构建或自行编译，不能用 CPU 包代替 GPU 包。Jetson 须另外核对 JetPack、驱动、CUDA/cuDNN 和 GPU 型号，wheel 的 aarch64 标签本身不保证设备兼容。macOS ARM64 不使用 NVIDIA CUDA extra，应使用 `onnx-cpu`。
 
 在已准备好上述系统环境的 Linux ARM64 设备上安装：
 
 ```bash
-# 待 0.2.3 发布到 PyPI 后，安装 SDK 与 CUDA 13 GPU 运行时
+# 待 0.2.4 发布到 PyPI 后，安装 SDK 与 CUDA 13 GPU 运行时
 uv venv --python 3.12
-uv pip install --python .venv/bin/python 'ai-inference[onnx-gpu-cu13]==0.2.3'
+uv pip install --python .venv/bin/python 'ai-inference[onnx-gpu-cu13]==0.2.4'
 
-# 或在本仓库明确选择 CUDA 13 环境（0.2.3 extra）
+# 或在本仓库明确选择 CUDA 13 环境（0.2.4 extra）
 uv sync --locked --python 3.12 --no-default-groups --extra onnx-gpu-cu13
 
 # 查看实际 ORT 版本与已编译的 providers
