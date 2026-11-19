@@ -6,6 +6,7 @@ import socket
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO, RawIOBase
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -589,5 +590,5 @@ def test_env_settings(monkeypatch):
     monkeypatch.setenv("AI_INFERENCE_MODEL_CONFIG", "configs/yolo11.yaml")
     monkeypatch.setenv("AI_INFERENCE_MAX_BATCH_SIZE", "2")
     settings = Settings.from_env()
-    assert str(settings.model_config_path) == "configs/yolo11.yaml"
+    assert settings.model_config_path == Path("configs/yolo11.yaml")
     assert settings.max_batch_size == 2

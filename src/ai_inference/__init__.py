@@ -21,7 +21,7 @@ from ai_inference.processing import Pipeline, State, Step, StepRegistry
 from ai_inference.processing.context import Context, Geometry, SampleContext
 from ai_inference.visualization.plotter import Plotter
 
-__version__ = "0.2.4"
+__version__ = "0.2.5"
 __all__ = [
     "Model",
     "Config",

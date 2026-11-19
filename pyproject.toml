@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai-inference"
-version = "0.2.4"
+version = "0.2.5"
 description = "Pipeline-based model inference SDK with a transport-independent engine boundary"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -14,7 +14,8 @@ dependencies = [
     # Shared lower bounds cover the minimum ORT + HTTP service combination.
     "numpy>=1.21.6,<2; python_version < '3.11'",
     "numpy>=1.24.2,<2; python_version >= '3.11' and python_version < '3.12'",
-    "numpy>=1.26.0,<2; python_version >= '3.12'",
+    "numpy>=1.26.0,<2; python_version >= '3.12' and sys_platform != 'win32'",
+    "numpy>=1.26.4,<2; python_version >= '3.12' and sys_platform == 'win32'",
     "opencv-python-headless>=3.4.16.59,<4.12; python_version < '3.11'",
     "opencv-python-headless>=3.4.17.61,<4.12; python_version >= '3.11'",
     "PyYAML>=6,<7; python_version < '3.12'",

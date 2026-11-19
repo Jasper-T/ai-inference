@@ -29,7 +29,7 @@ Ascend 的实际运行依赖由 `ascend` extra 声明，`tool.uv.sources` 指定
 
 ## 最低依赖验收
 
-[requirements/minimum.txt](../requirements/minimum.txt) 固定 ORT 与 HTTP 服务同时可用的共享依赖下限，覆盖 Python 3.10、3.11、3.12。验收环境同时安装 CPU ORT 1.18.0、FastAPI 0.115.0、Uvicorn 0.30.0 和 python-multipart 0.0.18，并执行完整 SDK、CPU ONNX 和服务测试。使用独立虚拟环境，避免直接降级日常开发环境。
+[requirements/minimum.txt](../requirements/minimum.txt) 固定 ORT 与 HTTP 服务同时可用的共享依赖下限，覆盖 Python 3.10、3.11、3.12。Windows/Python 3.12 使用 NumPy 1.26.4，Linux/Python 3.12 使用 1.26.0；其余下限按表中的 Python 条件选择。验收环境同时安装 CPU ORT 1.18.0、FastAPI 0.115.0、Uvicorn 0.30.0 和 python-multipart 0.0.18，并执行完整 SDK、CPU ONNX 和服务测试。使用独立虚拟环境，避免直接降级日常开发环境。
 
 ```bash
 uv venv --python 3.10 venv

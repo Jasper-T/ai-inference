@@ -109,14 +109,14 @@ python -m pip install -e '.[service,onnx-cpu]'
 
 在 [GitHub Releases](https://github.com/Jasper-T/ai-inference/releases) 中选择所需版本，下载 Assets 中的 `ai_inference-<版本>-py3-none-any.whl`。仅在该版本已发布对应资产时使用此方式；需要尚未发布的功能时，从源码安装或自行构建。
 
-以下以 `0.2.4` 文件名为例，在独立虚拟环境中执行，将路径和版本替换为实际下载的文件：
+以下以 `0.2.5` 文件名为例，在独立虚拟环境中执行，将路径和版本替换为实际下载的文件：
 
 ```bash
 # CPU
-python -m pip install './ai_inference-0.2.4-py3-none-any.whl[onnx-cpu]'
+python -m pip install './ai_inference-0.2.5-py3-none-any.whl[onnx-cpu]'
 
 # CPU + HTTP 服务；与上面的命令二选一
-python -m pip install './ai_inference-0.2.4-py3-none-any.whl[service,onnx-cpu]'
+python -m pip install './ai_inference-0.2.5-py3-none-any.whl[service,onnx-cpu]'
 ```
 
 如 Release 提供 `SHA256SUMS`，安装前计算 wheel 的 SHA256，并与清单中该文件的记录比较。macOS 可用 `shasum -a 256 <wheel路径>`，Linux 可用 `sha256sum <wheel路径>`。
@@ -124,12 +124,12 @@ python -m pip install './ai_inference-0.2.4-py3-none-any.whl[service,onnx-cpu]'
 GPU 安装替换为相应的 `onnx-gpu-cu11` / `onnx-gpu-cu12` / `onnx-gpu-cu13` extra，并确认下载版本实际提供该 extra。Ascend 安装还需从相同版本源码取得厂商清单：
 
 ```bash
-python -m pip install './ai_inference-0.2.4-py3-none-any.whl[ascend]' -r requirements/ascend.txt
+python -m pip install './ai_inference-0.2.5-py3-none-any.whl[ascend]' -r requirements/ascend.txt
 ```
 
 wheel 不包含仓库的 `configs/`、`examples/`、测试图片或模型权重。需要使用示例时，另行取得相同版本的源码；业务部署可自行提供 YAML 与模型，配置格式见 [配置与模型契约](configuration.md)。
 
-如果所需版本已发布到 PyPI，也可按包名安装，例如 `python -m pip install 'ai-inference[onnx-cpu]==0.2.4'`；实际可用版本以 [PyPI 项目页](https://pypi.org/project/ai-inference/) 为准。
+如果所需版本已发布到 PyPI，也可按包名安装，例如 `python -m pip install 'ai-inference[onnx-cpu]==0.2.5'`；实际可用版本以 [PyPI 项目页](https://pypi.org/project/ai-inference/) 为准。
 
 ### 2.2 自行构建
 
@@ -141,10 +141,10 @@ uv build --build-constraint .github/build-constraints.txt
 
 构建约束文件随 Git 仓库和源码发行包一起提供，解压源码发行包后也可执行同一命令。
 
-构建结果位于 `dist/`：`.whl` 为安装包，`.tar.gz` 为源码发行包。当前源码版本 `0.2.4` 的 wheel 安装示例：
+构建结果位于 `dist/`：`.whl` 为安装包，`.tar.gz` 为源码发行包。当前源码版本 `0.2.5` 的 wheel 安装示例：
 
 ```bash
-python -m pip install './dist/ai_inference-0.2.4-py3-none-any.whl[onnx-cpu]'
+python -m pip install './dist/ai_inference-0.2.5-py3-none-any.whl[onnx-cpu]'
 ```
 
 构建 SDK 无需先安装 GPU 或 Ascend 运行时；目标环境安装时再选后端。wheel 不内嵌后端依赖，也不锁定所有间接依赖。验收自建 wheel 应在仓库外的全新虚拟环境执行，避免源码的可编辑安装掩盖打包问题。发布与产物检查见 [脚本说明](../scripts/README.md)。
@@ -155,19 +155,19 @@ python -m pip install './dist/ai_inference-0.2.4-py3-none-any.whl[onnx-cpu]'
 
 ```bash
 python -m pip download --only-binary=:all: --dest wheelhouse \
-  './ai_inference-0.2.4-py3-none-any.whl[onnx-cpu]'
+  './ai_inference-0.2.5-py3-none-any.whl[onnx-cpu]'
 ```
 
 将整个 `wheelhouse/` 复制到离线机器，在独立虚拟环境中安装：
 
 ```bash
 python -m pip install --no-index --find-links=wheelhouse \
-  'ai-inference[onnx-cpu]==0.2.4'
+  'ai-inference[onnx-cpu]==0.2.5'
 ```
 
 HTTP 服务在下载和安装两步都选择 `[service,onnx-cpu]`；GPU 同理替换对应后端。`--only-binary=:all:` 会在缺少可用 wheel 时失败，应在联网准备阶段解决，不能仅复制 SDK wheel。
 
-Ascend 的联网下载还需添加 `-r requirements/ascend.txt`，并选择 `[ascend]`，把两个厂商 wheel 及全部依赖一并收入 `wheelhouse/`。离线安装使用 `--no-index --find-links=wheelhouse 'ai-inference[ascend]==0.2.4'`，不再传入包含远程 URL 的厂商清单。CANN、驱动、CUDA、cuDNN 和模型文件分别准备。
+Ascend 的联网下载还需添加 `-r requirements/ascend.txt`，并选择 `[ascend]`，把两个厂商 wheel 及全部依赖一并收入 `wheelhouse/`。离线安装使用 `--no-index --find-links=wheelhouse 'ai-inference[ascend]==0.2.5'`，不再传入包含远程 URL 的厂商清单。CANN、驱动、CUDA、cuDNN 和模型文件分别准备。
 
 ## 3. 安装检查与首次运行
 

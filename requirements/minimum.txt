@@ -3,7 +3,8 @@
 # Compiled dependencies use official wheels. Loguru 0.2.2 has a pure-Python sdist dependency.
 numpy==1.21.6; python_version < '3.11'
 numpy==1.24.2; python_version >= '3.11' and python_version < '3.12'
-numpy==1.26.0; python_version >= '3.12'
+numpy==1.26.0; python_version >= '3.12' and sys_platform != 'win32'
+numpy==1.26.4; python_version >= '3.12' and sys_platform == 'win32'
 opencv-python-headless==3.4.16.59; python_version < '3.11'
 opencv-python-headless==3.4.17.61; python_version >= '3.11'
 PyYAML==6.0; python_version < '3.12'
