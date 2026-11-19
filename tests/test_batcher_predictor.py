@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from ai_inference import Batcher, Config, DefaultPredictor, PreparedInput
+from ai_inference.contracts.execution import BatchCapabilities, ExecutionProfile, ShapeRange
 from ai_inference.engines.base import BaseEngine
 
 
@@ -74,3 +75,53 @@ def test_single_dynamic_sample_passes_without_padding(config):
     np.testing.assert_array_equal(
         DefaultPredictor(EchoEngine(config), config)(request).tensors["y"], request.tensors["x"]
     )
+
+
+def test_profile_gaps_are_not_treated_as_one_continuous_range(config):
+    capabilities = BatchCapabilities(
+        tuple(
+            ExecutionProfile((ShapeRange("x", (low, 2), (low, 2), (high, 2)),))
+            for low, high in ((2, 3), (6, 8))
+        )
+    )
+    batcher = Batcher(contract(config, dynamic=True), capabilities=capabilities)
+    chunks = list(batcher.split(prepared(5)))
+    assert [(c.valid_count, c.physical_count) for c in chunks] == [(3, 3), (2, 2)]
+    [tail] = list(batcher.split(prepared(1)))
+    assert (tail.valid_count, tail.physical_count) == (1, 2)
+    with pytest.raises(ValueError, match="jointly match"):
+        capabilities.select_profile({"x": (4, 2)})
+
+
+def test_all_input_shapes_must_match_the_same_profile():
+    def limits(name, width):
+        return ShapeRange(name, (2, width), (4, width), (8, width))
+
+    capabilities = BatchCapabilities(
+        (
+            ExecutionProfile((limits("x", 2), limits("aux", 3))),
+            ExecutionProfile((limits("x", 4), limits("aux", 5))),
+        )
+    )
+    assert capabilities.select_profile({"x": (2, 4), "aux": (2, 5)}) == 1
+    assert capabilities.ranges({"x": (1, 4), "aux": (1, 5)}) == ((2, 8),)
+    with pytest.raises(ValueError, match="jointly match"):
+        capabilities.select_profile({"x": (2, 2), "aux": (2, 5)})
+
+
+@pytest.mark.parametrize("padding", ["repeat_last", "zeros"])
+def test_dynamic_minimum_padding_restores_only_valid_samples(config, padding):
+    data = contract(config, dynamic=True).model_dump()
+    data["runtime"]["batch"]["padding"] = padding
+    config = type(config).model_validate(data)
+    capabilities = BatchCapabilities(
+        (ExecutionProfile((ShapeRange("x", (2, 2), (4, 2), (8, 2)),)),)
+    )
+    batcher = Batcher(config, capabilities=capabilities)
+    request = prepared(5)
+    chunks = list(batcher.split(request))
+    assert [(c.valid_count, c.physical_count) for c in chunks] == [(4, 4), (1, 2)]
+    expected = request.tensors["x"][-1] if padding == "repeat_last" else np.zeros(2)
+    np.testing.assert_array_equal(chunks[-1].tensors["x"][-1], expected)
+    raw = DefaultPredictor(EchoEngine(config), config, batcher=batcher)(request)
+    np.testing.assert_array_equal(raw.tensors["y"], request.tensors["x"])

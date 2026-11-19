@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
+from threading import Condition, local
 from typing import TYPE_CHECKING, Mapping, Protocol
 
 import numpy as np
@@ -27,13 +29,83 @@ class Engine(Protocol):
 
     def infer(self, tensors: Mapping[str, np.ndarray]) -> Mapping[str, np.ndarray]: ...
     def warmup(self, tensors: Mapping[str, np.ndarray] | None = None) -> None: ...
+    def close(self) -> None: ...
 
 
 class BaseEngine:
-    """Checked public inference entry; subclasses implement backend execution only."""
+    """Checked execution and lifecycle; subclasses own backend execution/resources."""
+
+    def __new__(cls, *args, **kwargs):
+        # Older subclasses set config themselves without calling BaseEngine.__init__.
+        # Establish the shared guard before any subclass constructor can run.
+        instance = super().__new__(cls)
+        instance._lifecycle_condition = Condition()
+        instance._operation_local = local()
+        instance._active_operations = 0
+        instance._closing = instance._closed = False
+        return instance
 
     def __init__(self, config: Config):
         self.config = config
+
+    @contextmanager
+    def _operation(self):
+        if getattr(self._operation_local, "active", False):
+            yield
+            return
+        with self._lifecycle_condition:
+            if self._closing or self._closed:
+                raise RuntimeError("Engine is closed")
+            self._active_operations += 1
+        self._operation_local.active = True
+        try:
+            yield
+        finally:
+            self._operation_local.active = False
+            with self._lifecycle_condition:
+                self._active_operations -= 1
+                self._lifecycle_condition.notify_all()
+
+    @contextmanager
+    def _initialization(self):
+        """Backends use this after initializing fields needed by their cleanup hook."""
+        try:
+            yield
+        except BaseException:
+            try:
+                self.close()
+            except Exception as exc:
+                log_event(
+                    "init",
+                    "engine.cleanup",
+                    "Resource cleanup failed",
+                    level="WARNING",
+                    model=self.config.model.name,
+                    error_type=type(exc).__name__,
+                )
+            raise
+
+    def close(self) -> None:
+        """Reject new operations, drain admitted work, and run backend cleanup once."""
+        if getattr(self._operation_local, "active", False):
+            raise RuntimeError("Cannot close Engine from an active engine operation")
+        with self._lifecycle_condition:
+            while self._closing and not self._closed:
+                self._lifecycle_condition.wait()
+            if self._closed:
+                return
+            self._closing = True
+            self._lifecycle_condition.notify_all()
+            while self._active_operations:
+                self._lifecycle_condition.wait()
+            try:
+                self._close()
+            finally:
+                self._closed = True
+                self._lifecycle_condition.notify_all()
+
+    def _close(self) -> None:
+        """Override to release owned resources; resource-free engines need no hook."""
 
     def read_tensor_metadata(self) -> dict[str, tuple[TensorMetadata, ...]]:
         """Return backend-neutral metadata; backends may inspect their session."""
@@ -142,6 +214,10 @@ class BaseEngine:
 
     def warmup(self, tensors: Mapping[str, np.ndarray] | None = None) -> None:
         """Create or accept valid physical inputs, then run the engine entry."""
+        with self._operation():
+            self._warmup(tensors)
+
+    def _warmup(self, tensors: Mapping[str, np.ndarray] | None = None) -> None:
         completed = 0
         try:
             tensors = self.create_warmup_inputs() if tensors is None else tensors
@@ -172,12 +248,13 @@ class BaseEngine:
         )
 
     def infer(self, tensors: Mapping[str, np.ndarray]) -> Mapping[str, np.ndarray]:
-        count = validate_physical_inputs(tensors, self.config)
-        outputs = self._infer(tensors)
-        if not isinstance(outputs, Mapping):
-            raise ValueError("outputs must be a tensor mapping")
-        validate_tensors(outputs, self.config.outputs, count)
-        return outputs
+        with self._operation():
+            count = validate_physical_inputs(tensors, self.config)
+            outputs = self._infer(tensors)
+            if not isinstance(outputs, Mapping):
+                raise ValueError("outputs must be a tensor mapping")
+            validate_tensors(outputs, self.config.outputs, count)
+            return outputs
 
     def _infer(self, tensors: Mapping[str, np.ndarray]) -> Mapping[str, np.ndarray]:
         raise NotImplementedError

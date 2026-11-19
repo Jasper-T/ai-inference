@@ -17,14 +17,14 @@ INFO记录加载、校验后采用的 batch 策略、模型原始与解析后的
 [rfdetr_nano_coco]-[infer]-[engine.predict] batch=1/1 | Completed | valid=1 | physical=1 | padding=0
 ```
 
-初始化摘要在模型契约与 Pipeline 校验通过后输出；不需要发起推理请求。ONNX / OM 共用元数据日志，每个 input/output 打印真实名称、dtype、模型原始 `shape` 和实际采用的 `resolved_shape`。静态模型 batch 冲突先报错，不输出通过校验的摘要。固定策略会将模型的符号 batch 约束为 size；动态策略的未知维度保持 `None`，实际尺寸在推理时校验。
+初始化摘要在模型契约与 Pipeline 校验通过后输出；不需要发起推理请求。ONNX Runtime、OM 和原生 TensorRT 共用元数据日志，每个 input/output 打印真实名称、dtype、模型原始 `shape` 和实际采用的 `resolved_shape`。静态模型 batch 冲突先报错，不输出通过校验的摘要。固定策略会将模型的符号 batch 约束为 size；动态策略的未知维度保持 `None`，实际尺寸在推理时校验。
 
 ```text
 [rtdetr]-[init]-[engine.metadata] Input 'images' | float32 | shape=['N', 3, 640, 640] | resolved_shape=[None, 3, 640, 640]
 [rtdetr]-[init]-[batching] Validated | mode=dynamic | size=2 | size_role=max | padding=none
 ```
 
-`size_role=fixed` 表示固定物理 batch，`size_role=max` 表示每批上限；动态模式不补齐，因此有效策略打印 `padding=none`。结构化字段为 `shape`、`resolved_shape`、`batch_mode`、`batch_size`、`batch_size_role`、`batch_padding`。初始化校验失败时不输出 `Validated` 摘要；warmup 成功与模型 ready 由后续日志单独确认。
+`size_role=fixed` 表示固定物理 batch，`size_role=max` 表示每批上限；ONNX Runtime 的动态策略打印 `padding=none`。原生 TensorRT 的动态策略打印配置的 `repeat_last` 或 `zeros`，需要补齐时按实际 profile 的下限应用。结构化字段为 `shape`、`resolved_shape`、`batch_mode`、`batch_size`、`batch_size_role`、`batch_padding`。初始化校验失败时不输出 `Validated` 摘要；warmup 成功与模型 ready 由后续日志单独确认。
 
 SDK不生成request/run/instance编号，不保存计时状态，不做请求汇总或日志终态去重。PreparedInput/RawOutput仅携带阶段数据及原输入元数据。每次实际阶段执行独立输出日志，包括重复后处理；请求统计和告警归应用管理。
 

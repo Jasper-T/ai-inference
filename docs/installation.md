@@ -14,10 +14,11 @@ Python 下限为 **3.10**，已验证 3.10 / 3.11 / 3.12。推荐 Python 3.12；
 | `onnx-gpu-cu11` | NVIDIA CUDA 11.x / cuDNN 8；Python 3.10–3.12；Linux x86_64 或 Windows x64 |
 | `onnx-gpu-cu12` | NVIDIA CUDA ≥12.8 / cuDNN 9；Linux x86_64 或 Windows x64 |
 | `onnx-gpu-cu13` | NVIDIA CUDA ≥13.0 / cuDNN 9；Python ≥3.11；Linux x86_64 / aarch64 或 Windows x64 |
+| `tensorrt-cu12` | [原生 TensorRT 10.16 / CUDA 12](tensorrt.md#安装与适用范围)；CPython 3.10–3.12；Linux x86_64（glibc ≥2.28）或 Windows x64；当前源码新增 |
 | `ascend` | 静态 OM 推理；Linux x86_64 / aarch64、CPython 3.10–3.12；需匹配的 CANN、驱动和设备 |
 | `service` | 可与一个后端组合，提供 FastAPI、Uvicorn、multipart 和 httpx 依赖 |
 
-前五个后端 extra 两两互斥，uv 会拒绝同时选择；pip 不执行 uv 的互斥检查，需自行保证环境中只有一个后端。GPU 必须显式指定 CUDA 系列，安装工具不检测系统 CUDA。切换后端时建议新建环境，避免 CPU/GPU ORT 包覆盖同名模块。
+每个环境选择一个后端 extra。uv 会检查互斥，使用 pip 时由调用方选择。GPU 后端按目标环境显式选择 CUDA 系列。切换后端时建议新建环境，避免 CPU/GPU ORT 包覆盖同名模块。
 
 驱动、CUDA、cuDNN、CANN 和模型文件需另行准备。CUDA 11 extra 使用 CUDA 11.8 构建的 ORT，CUDA 11.2 仍需目标机器实测；Linux ARM64 CUDA 13 wheel 要求 glibc ≥2.34，Jetson 还需核对 JetPack 和设备兼容性。完整约束及失败行为见 [CUDA 部署说明](configuration.md#cuda-部署与失败) 和 [Ascend OM](configuration.md#ascend-om-与-rf-detr-aipp)。
 
@@ -48,11 +49,14 @@ uv sync --locked --python 3.12 --no-default-groups --extra service --extra onnx-
 # CUDA 11 / cuDNN 8
 uv sync --locked --python 3.10 --no-default-groups --extra onnx-gpu-cu11
 
-# CUDA 12 / cuDNN 9
+# ONNX Runtime GPU，CUDA 12 / cuDNN 9
 uv sync --locked --python 3.12 --no-default-groups --extra onnx-gpu-cu12
 
 # CUDA 13 / cuDNN 9
 uv sync --locked --python 3.12 --no-default-groups --extra onnx-gpu-cu13
+
+# 原生 TensorRT，CUDA 12
+uv sync --locked --python 3.12 --no-default-groups --extra tensorrt-cu12
 
 # Ascend；自动安装锁定来源的 aclruntime 和 ais-bench
 uv sync --locked --python 3.12 --no-default-groups --extra ascend
@@ -80,7 +84,7 @@ python -m pip install '.[onnx-cpu]'
 
 Windows PowerShell 使用 `py -3.12 -m venv .venv` 和 `.venv\Scripts\Activate.ps1`。如果已有虚拟环境，可直接使用该环境的 Python。
 
-其他后端只需替换 extra，例如 `'.[onnx-gpu-cu12]'`；服务使用 `'.[service,onnx-cpu]'`。pip 根据依赖范围解析版本，不读取 `uv.lock`，因此不保证与 uv 环境逐项一致。生产部署需要另行固定完整依赖集合。
+ONNX Runtime GPU 使用对应的 extra，例如 `'.[onnx-gpu-cu12]'`。服务使用 `'.[service,onnx-cpu]'` 等组合。原生 TensorRT 还需配置 [NVIDIA 索引](tensorrt.md#安装与适用范围)。pip 根据依赖范围解析版本，生产部署需要另行固定完整依赖集合。
 
 Ascend 的 pip 安装须同时使用厂商 wheel 清单：
 
@@ -121,7 +125,7 @@ python -m pip install './ai_inference-0.2.5-py3-none-any.whl[service,onnx-cpu]'
 
 如 Release 提供 `SHA256SUMS`，安装前计算 wheel 的 SHA256，并与清单中该文件的记录比较。macOS 可用 `shasum -a 256 <wheel路径>`，Linux 可用 `sha256sum <wheel路径>`。
 
-GPU 安装替换为相应的 `onnx-gpu-cu11` / `onnx-gpu-cu12` / `onnx-gpu-cu13` extra，并确认下载版本实际提供该 extra。Ascend 安装还需从相同版本源码取得厂商清单：
+ONNX Runtime GPU 安装替换为相应的 `onnx-gpu-cu11` / `onnx-gpu-cu12` / `onnx-gpu-cu13` extra，并确认下载的版本提供该 extra。原生 TensorRT 的 wheel 安装命令见 [TensorRT 安装指南](tensorrt.md#安装与适用范围)，上例的 `v0.2.5` 标签尚未包含该 extra。Ascend 安装还需从相同版本源码取得厂商清单：
 
 ```bash
 python -m pip install './ai_inference-0.2.5-py3-none-any.whl[ascend]' -r requirements/ascend.txt
@@ -165,9 +169,11 @@ python -m pip install --no-index --find-links=wheelhouse \
   'ai-inference[onnx-cpu]==0.2.5'
 ```
 
-HTTP 服务在下载和安装两步都选择 `[service,onnx-cpu]`；GPU 同理替换对应后端。`--only-binary=:all:` 会在缺少可用 wheel 时失败，应在联网准备阶段解决，不能仅复制 SDK wheel。
+HTTP 服务在下载和安装两步都选择 `[service,onnx-cpu]`。ONNX Runtime GPU 替换为对应后端。`--only-binary=:all:` 要求每个依赖都提供可用 wheel。
 
 Ascend 的联网下载还需添加 `-r requirements/ascend.txt`，并选择 `[ascend]`，把两个厂商 wheel 及全部依赖一并收入 `wheelhouse/`。离线安装使用 `--no-index --find-links=wheelhouse 'ai-inference[ascend]==0.2.5'`，不再传入包含远程 URL 的厂商清单。CANN、驱动、CUDA、cuDNN 和模型文件分别准备。
+
+原生 TensorRT 的前端包以源码包分发。可在匹配目标平台的联网机器上用 `pip wheel --wheel-dir wheelhouse --extra-index-url https://pypi.nvidia.com '.[tensorrt-cu12]'` 预构建 SDK 与前端 wheel，并收集全部依赖。离线环境使用 `pip install --no-index --find-links=wheelhouse 'ai-inference[tensorrt-cu12]'`，随后执行设备验收。
 
 ## 3. 安装检查与首次运行
 
@@ -182,4 +188,8 @@ uv 环境使用 `uv pip check`，导入检查使用 `uv run --locked --no-sync p
 
 导入通过后，还需运行一次目标模型。源码用户可按 [Quick Start](../README.md#quick-start) 执行 CPU YuNet 示例；pip 源码安装使用 `python examples/yunet.py`。wheel 用户需先准备配置、模型和输入图片，再调用 [检测示例](../README.md#检测调用)。
 
-GPU / Ascend extra 在不支持的 Python 或平台上可能跳过运行时依赖，安装成功不代表设备可用。CUDA 验收须将 YAML 的 `runtime.options.providers` 设为 `cuda` 并执行真实推理；默认 CPU 示例不能验证 GPU。Ascend 使用 OM 配置和目标 CANN 环境验证，参考 [OM 配置](../configs/rfdetr_om.yaml)。HTTP 服务启动及健康检查见 [服务说明](service/README.md)。
+GPU / Ascend extra 在不支持的 Python 或平台上可能跳过运行时依赖。ORT CUDA 验收使用 `runtime.options.providers: cuda` 执行真实推理；原生 TensorRT 使用 `runtime.backend: tensorrt` 和 [GPU 实测说明](testing.md#原生-tensorrt-验证)。Ascend 在目标 CANN 环境使用 [OM 配置](../configs/rfdetr_om.yaml) 验证。HTTP 服务启动及健康检查见 [服务说明](service/README.md)。
+
+## 原生 TensorRT
+
+原生后端使用独立的 `tensorrt-cu12` extra，实际 wheel 来自 NVIDIA 官方索引。uv 源已配置在项目中；pip 需添加 `--extra-index-url https://pypi.nvidia.com`。版本、支持平台、锁定依赖导出及安装示例见 [原生 TensorRT](tensorrt.md#安装与适用范围)。这与 ORT 的 `trt` provider 安装路径不同。

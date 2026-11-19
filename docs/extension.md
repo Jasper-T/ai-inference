@@ -82,11 +82,11 @@ model = Model(config, preprocessor=my_preprocessor, postprocessor=my_postprocess
 
 ## Engine 与 Predictor 扩展
 
-用EngineRegistry.register(name)注册接收Config的工厂，返回提供config、infer(tensors)、warmup(tensors=None)的Engine。推荐继承BaseEngine，只实现_infer并按需覆盖预热输入。
+用EngineRegistry.register(name)注册接收Config的工厂，返回提供config、infer(tensors)、warmup(tensors=None)、close()的Engine。推荐继承BaseEngine，只实现_infer并按需覆盖预热输入。
 物理batch输入输出保持名称、dtype和batch维；模型算法不放进Engine。
-内置ORT/OM继承BaseEngine，子类实现_infer，公共infer统一检查张量契约，warmup经过相同入口。
-`BaseEngine.create_warmup_inputs()`默认按输入契约创建零张量，可由子类覆盖以提供合法尺寸、索引或其他模型特定值。`BaseEngine.warmup(tensors=None)`接收可选的合法物理batch输入并调用公共infer入口；引擎也可覆盖整个warmup方法，Model只负责触发。第三方引擎需要实现 Engine 契约。
-`read_tensor_metadata()`返回后端无关的张量信息（名称、dtype、shape），ONNX / OM 实现从 session 读取；基类默认返回配置契约，自定义后端默认须在 Config 中提供完整契约。支持自动发现的扩展引擎应先创建 session，再覆盖 read_tensor_metadata 并调用 BaseEngine._load_tensor_contract；解析后的 config 保存在引擎实例。`log_tensor_metadata(logger)`使用Loguru打印这些信息。
+内置ORT/OM/TensorRT继承BaseEngine，子类实现_infer，公共infer统一检查张量契约，warmup经过相同入口。
+`BaseEngine.create_warmup_inputs()`默认按输入契约创建零张量，可由子类覆盖以提供合法尺寸、索引或其他模型特定值。`BaseEngine.warmup(tensors=None)`接收可选的合法物理batch输入并调用公共infer入口；推荐保留公共 warmup 方法以使用统一生命周期保护；覆盖整个方法时，扩展方须自行保证关闭准入和在途调用保护。第三方引擎需要实现 Engine 契约。
+`read_tensor_metadata()`返回后端无关的张量信息（名称、dtype、shape），内置后端从加载的会话或 engine 读取；基类默认返回配置契约，自定义后端默认须在 Config 中提供完整契约。支持自动发现的扩展引擎应先创建 session，再覆盖 read_tensor_metadata 并调用 BaseEngine._load_tensor_contract；解析后的 config 保存在引擎实例。`log_tensor_metadata(logger)`使用Loguru打印这些信息。
 引擎的 `_load_session()` 负责会话初始化，BaseEngine 的 `_load_tensor_contract()` 负责解析和校验张量契约；图片处理和解码在Pipeline中，跨物理batch的准备与恢复在Batcher中。
 
 公开Predictor Protocol接收PreparedInput、返回RawOutput。统一默认实现为DefaultPredictor(engine,config,batcher=...)，单张/多张、固定/动态均经过相同路径。
@@ -95,3 +95,15 @@ Model.batcher与Model.predictor.batcher为同一实例，所有chunk与输出集
 自定义Engine默认收到3次零张量warmup，runtime.warmup:false可关闭。
 
 模型来源、版本、许可、业务关联和人员检索仍由上层负责；SDK只管理推理契约。
+
+## Engine 生命周期
+
+调用方通过 `Model.close()` 或 `with Model(...)` 决定释放时机；HTTP 服务已在退出流程接入。直接使用 Engine 的调用方应在不再使用它时调用 `engine.close()`。
+
+`BaseEngine.close()` 阻止新 infer / warmup，等待已经准入的操作完成，然后仅调用一次后端 `_close()`。完整 warmup（包括其内部多次 infer）作为一个在途操作；关闭期间不会中断已开始的 warmup。公共生命周期保护允许并行 infer，不替后端决定具体会话是否需要执行锁。不得从当前 Engine 的 infer / warmup 内同步关闭同一个 Engine，否则明确报错以避免自等待。
+
+资源型后端在 `super().__init__(config)` 后先初始化 `_close()` 需要读取的字段，再将加载、元数据发现及契约校验放入 `with self._initialization():`。初始化抛错会通过相同的 close 入口清理，保留原始异常。子类实现 `_close()`，不覆盖公共 close；无资源后端可继承默认空钩子。清理钩子应尝试回收全部自有资源；若仍抛错，首次关闭报告该错误，引擎保持不可使用状态，重复关闭不重试钩子。
+
+ORT 通过清空会话引用释放自身所有权，不使用私有 ORT 接口；若调用方另持会话引用，其生存期由调用方负责。OM 使用锁定 ais_bench 版本的实例级 `free_resource()`，不调用会影响其他模型的全局 finalize。TensorRT 将 CUDA/TRT 清理实现放入 `_close()`，不重置整个设备。
+
+新自定义 Engine 应提供 close 或继承 BaseEngine。旧的非 BaseEngine 实现没有 close 时，Model 仍允许运行并在关闭时放弃引用；这条兼容路径不提供厂商级显式释放保证。自定义后端若覆盖公共 infer / warmup / close，其生命周期行为由该实现负责。

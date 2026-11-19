@@ -122,7 +122,7 @@ SDK不保留计时状态；性能测量由独立benchmark工具完成，见 [日
 
 ## 配置与扩展契约
 
-六份默认 YAML 统一采用有序 steps，model 仅需 name/path；ONNX / OM 自动发现输入输出契约。构造独立 Pipeline 时应传入 model.config 或其他已解析的完整契约。
+六份默认 YAML 统一采用有序 steps，model 仅需 name/path。内置后端可自动发现输入输出契约，原生 TensorRT 配置可复用与转换产物契约匹配的处理步骤。构造独立 Pipeline 时应传入 model.config 或其他已解析的完整契约。
 前后处理必须使用有序 steps；每个步骤的参数由对应工厂严格校验。
 内置模型解码位于processing/decoders，仅消费模型输出与Geometry；processing/steps/decode.py负责将这些算法注册为后处理步骤。
 SFace特征构造与L2归一化独立配置。

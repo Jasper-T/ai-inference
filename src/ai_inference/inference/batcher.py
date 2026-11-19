@@ -7,6 +7,7 @@ import numpy as np
 
 from ai_inference.config import Config
 from ai_inference.contracts.data import PreparedInput, RawOutput
+from ai_inference.contracts.execution import BatchCapabilities
 from ai_inference.contracts.validation import validate_tensors
 from ai_inference.logging import log_event
 
@@ -36,17 +37,51 @@ class BatchChunk:
 class Batcher:
     """Share immutable policy; keep chunks and collected outputs request-local."""
 
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, *, capabilities: BatchCapabilities | None = None):
         if not config.has_tensor_contract:
             raise ValueError("Batcher requires a resolved tensor contract")
         self.config = config
+        self.capabilities = capabilities
+        if config.runtime.batch.mode == "auto":
+            raise ValueError("Batcher requires a resolved batch policy")
+
+    def _counts(self, prepared: PreparedInput) -> list[tuple[int, int]]:
+        policy = self.config.runtime.batch
+        bounds = ((1, policy.size),)
+        if self.capabilities is not None and prepared.count:
+            shapes = {name: value.shape for name, value in prepared.tensors.items()}
+            bounds = tuple(
+                (low, min(high, policy.size))
+                for low, high in self.capabilities.ranges(shapes)
+                if low <= policy.size
+            )
+        counts, remaining = [], prepared.count
+        while remaining:
+            if policy.mode == "fixed":
+                if not any(low <= policy.size <= high for low, high in bounds):
+                    raise ValueError("fixed batch size does not match any common execution profile")
+                valid, physical = min(remaining, policy.size), policy.size
+            else:
+                candidates = [min(remaining, high) for low, high in bounds if low <= remaining]
+                if candidates:
+                    valid = physical = max(candidates)
+                elif bounds:
+                    valid, physical = remaining, min(low for low, _ in bounds)
+                else:
+                    raise ValueError(
+                        "input shapes and batch limit match no common execution profile"
+                    )
+            counts.append((valid, physical))
+            remaining -= valid
+        return counts
 
     def split(self, prepared: PreparedInput) -> Iterator[BatchChunk]:
         """Validate logical inputs, then yield contiguous, optionally padded feeds."""
         validate_tensors(prepared.tensors, self.config.inputs, prepared.count)
         policy = self.config.runtime.batch
-        total = (prepared.count + policy.size - 1) // policy.size
-        padded = total * policy.size - prepared.count if policy.mode == "fixed" else 0
+        counts = self._counts(prepared)
+        total = len(counts)
+        padded = sum(physical - valid for valid, physical in counts)
         log_event(
             "infer",
             "batching",
@@ -58,9 +93,8 @@ class Batcher:
             batch_size=policy.size,
             padded_samples=padded,
         )
-        for start in range(0, prepared.count, policy.size):
-            valid = min(policy.size, prepared.count - start)
-            physical = policy.size if policy.mode == "fixed" else valid
+        start = 0
+        for index, (valid, physical) in enumerate(counts, 1):
             feeds = {}
             for name, tensor in prepared.tensors.items():
                 chunk = tensor[start : start + valid]
@@ -72,7 +106,8 @@ class Batcher:
                     )
                     chunk = np.concatenate((chunk, pad), axis=0)
                 feeds[name] = np.ascontiguousarray(chunk)
-            yield BatchChunk(feeds, start, valid, physical, start // policy.size + 1, total)
+            yield BatchChunk(feeds, start, valid, physical, index, total)
+            start += valid
 
     def trim(self, outputs: Mapping[str, np.ndarray], chunk: BatchChunk) -> dict[str, np.ndarray]:
         """Validate physical outputs and detach valid samples from backend buffers."""

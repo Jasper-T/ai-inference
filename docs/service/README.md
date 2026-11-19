@@ -20,11 +20,13 @@ AI_INFERENCE_MODEL_CONFIG=configs/yolo11.yaml \
 
 Ascend 服务的 uv 环境使用 `uv sync --locked --no-default-groups --extra service --extra ascend`，重复同步仍选择相同 extra，保留严格必需的 `aclruntime` 与 `ais_bench`。安装和运行之间不执行省略后端选择的 `uv sync`；开发时去掉 `--no-default-groups` 即可保留测试与检查工具。
 
+原生 TensorRT 服务使用 `uv sync --locked --no-default-groups --extra service --extra tensorrt-cu12`，并将 `AI_INFERENCE_MODEL_CONFIG` 指向启用了 `runtime.backend: tensorrt` 的 YAML。[TensorRT 安装及配置](../tensorrt.md)
+
 源码 pip、Release wheel、自行构建及离线安装见 [安装指南](../installation.md)，安装时组合 `service` 与一个后端 extra，例如 `[service,onnx-cpu]` 或 `[service,onnx-gpu-cu11]`。环境要求见 [CUDA 部署说明](../configuration.md#cuda-部署与失败)。安装后可从其他目录运行 `uvicorn ai_inference.service.app:app`，部署时建议使用绝对配置路径。纯 SDK 使用者无需安装 `service` extra，基础导入不加载 HTTP 框架。
 
-启动阶段加载模型，按模型 YAML 的 `runtime.warmup` 设置预热；加载失败则启动失败。不要使用多个 worker 扩容同一设备：每个 worker 都会独立加载模型。单进程只接纳一个推理请求，包含输入解析、下载、解码、推理和响应发送；忙时立即返回 503，不排队。健康检查不等待推理。推理在工作线程执行，SDK 当前没有统一的显式 `close()` 接口，停止时释放服务持有的模型引用，设备资源最终由进程退出回收。
+启动阶段加载模型，按模型 YAML 的 `runtime.warmup` 设置预热；加载失败则启动失败。不要使用多个 worker 扩容同一设备：每个 worker 都会独立加载模型。单进程只接纳一个推理请求，包含输入解析、下载、解码、推理和响应发送；忙时立即返回 503，不排队。健康检查不等待推理。推理在工作线程执行。服务退出时停止接受新推理请求，等待已准入的请求结束，再调用 `Model.close()`。服务启动后的配置检查失败也会关闭模型。自建服务可在退出流程调用同一接口。
 
-本版不执行模型热更新、跨请求动态合批或推理中断；上层按服务实例分发。URL 下载和慢请求可占用当前执行名额，上层应设置请求读取超时、并发连接数及访问控制。请求断开不等于底层设备推理已取消。CUDA/OM 的实际设备行为仍需部署环境验收。
+本版不执行模型热更新、跨请求动态合批或推理中断；上层按服务实例分发。URL 下载和慢请求可占用当前执行名额，上层应设置请求读取超时、并发连接数及访问控制。请求断开不等于底层设备推理已取消。ORT CUDA、原生 TensorRT 和 OM 的设备行为需在部署环境验收。
 
 ## 接口
 

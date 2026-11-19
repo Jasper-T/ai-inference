@@ -29,7 +29,7 @@ sys.path.insert(0, sys.argv[1])
 
 class BlockHTTP(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
-        if fullname.split('.')[0] in {'fastapi', 'starlette', 'uvicorn', 'multipart', 'httpx'}:
+        if fullname.split('.')[0] in {'fastapi', 'starlette', 'uvicorn', 'multipart', 'httpx', 'tensorrt', 'cuda'}:
             raise ModuleNotFoundError(fullname)
 
 sys.meta_path.insert(0, BlockHTTP())

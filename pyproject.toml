@@ -57,6 +57,14 @@ onnx-gpu-cu13 = [
     "onnxruntime-gpu>=1.29,<1.32; python_version >= '3.11' and ((sys_platform == 'linux' and (platform_machine == 'x86_64' or platform_machine == 'aarch64')) or (sys_platform == 'win32' and platform_machine == 'AMD64'))",
 ]
 
+# Resolve binary libraries from NVIDIA's actual wheels, bypassing PyPI wheel stubs.
+tensorrt-cu12 = [
+    "tensorrt-cu12==10.16.0.72; implementation_name == 'cpython' and python_version < '3.13' and ((sys_platform == 'linux' and platform_machine == 'x86_64') or (sys_platform == 'win32' and platform_machine == 'AMD64'))",
+    "tensorrt-cu12-bindings==10.16.0.72; implementation_name == 'cpython' and python_version < '3.13' and ((sys_platform == 'linux' and platform_machine == 'x86_64') or (sys_platform == 'win32' and platform_machine == 'AMD64'))",
+    "tensorrt-cu12-libs==10.16.0.72; implementation_name == 'cpython' and python_version < '3.13' and ((sys_platform == 'linux' and platform_machine == 'x86_64') or (sys_platform == 'win32' and platform_machine == 'AMD64'))",
+    "cuda-bindings==12.9.4; implementation_name == 'cpython' and python_version < '3.13' and ((sys_platform == 'linux' and platform_machine == 'x86_64') or (sys_platform == 'win32' and platform_machine == 'AMD64'))",
+]
+
 # uv selects pinned wheel sources below; pip also uses requirements/ascend.txt.
 ascend = [
     "aclruntime==0.0.2; sys_platform == 'linux' and (platform_machine == 'aarch64' or platform_machine == 'x86_64') and python_version >= '3.10' and python_version < '3.13' and implementation_name == 'cpython'",
@@ -89,10 +97,17 @@ required-environments = [
     "sys_platform == 'win32' and platform_machine == 'AMD64' and python_version == '3.12'",
 ]
 conflicts = [
-    [{extra = "onnx-cpu"}, {extra = "onnx-gpu-cu11"}, {extra = "onnx-gpu-cu12"}, {extra = "onnx-gpu-cu13"}, {extra = "ascend"}],
+    [{extra = "onnx-cpu"}, {extra = "onnx-gpu-cu11"}, {extra = "onnx-gpu-cu12"}, {extra = "onnx-gpu-cu13"}, {extra = "ascend"}, {extra = "tensorrt-cu12"}],
 ]
 
+[[tool.uv.index]]
+name = "nvidia"
+url = "https://pypi.nvidia.com"
+explicit = true
+
 [tool.uv.sources]
+tensorrt-cu12-bindings = { index = "nvidia", extra = "tensorrt-cu12" }
+tensorrt-cu12-libs = { index = "nvidia", extra = "tensorrt-cu12" }
 aclruntime = [
     { url = "https://aisbench.obs.myhuaweicloud.com/packet/ais_bench_infer/0.0.2/ait/aclruntime-0.0.2-cp310-cp310-linux_aarch64.whl", marker = "sys_platform == 'linux' and platform_machine == 'aarch64' and python_version == '3.10' and implementation_name == 'cpython'", extra = "ascend" },
     { url = "https://aisbench.obs.myhuaweicloud.com/packet/ais_bench_infer/0.0.2/ait/aclruntime-0.0.2-cp310-cp310-linux_x86_64.whl", marker = "sys_platform == 'linux' and platform_machine == 'x86_64' and python_version == '3.10' and implementation_name == 'cpython'", extra = "ascend" },

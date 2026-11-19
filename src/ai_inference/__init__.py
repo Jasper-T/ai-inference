@@ -11,7 +11,7 @@ from ai_inference.contracts.data import (
     Result,
 )
 from ai_inference.contracts.processors import Postprocessor, Preprocessor
-from ai_inference.engines import BaseEngine, Engine, OMEngine, ONNXRuntimeEngine
+from ai_inference.engines import BaseEngine, Engine, OMEngine, ONNXRuntimeEngine, TensorRTEngine
 from ai_inference.engines.registry import EngineRegistry
 from ai_inference.inference.batcher import BatchChunk, Batcher
 from ai_inference.inference.predictor import DefaultPredictor, Predictor
@@ -37,6 +37,7 @@ __all__ = [
     "BaseEngine",
     "ONNXRuntimeEngine",
     "OMEngine",
+    "TensorRTEngine",
     "Preprocessor",
     "Postprocessor",
     "Plotter",

@@ -9,6 +9,18 @@ version and release notes. HTTP service changes are identified below.
 
 ## Unreleased
 
+### Added
+
+- Native TensorRT inference via `runtime.backend: tensorrt` and the `tensorrt-cu12` extra for CPython 3.10–3.12 on Linux x86_64 and Windows x64. The backend loads serialized TensorRT engines and discovers their I/O contracts.
+- Automatic batch policy selection from TensorRT engines and profile-aware batching. The SDK matches all inputs against a single optimization profile, pads undersized tail batches when needed, and returns one result per original sample.
+- A standalone ONNX-to-TensorRT converter, `scripts/convert_tensorrt.py`, with explicit optimization profiles and FP32/FP16 build options.
+- `Model.close()` and context-manager support for explicit resource cleanup. Built-in engines wait for in-flight work before releasing their resources.
+
+### Changed
+
+- HTTP shutdown waits for admitted requests and closes the model. Startup configuration failures also close the model.
+- The `Engine` typing protocol now includes `close()`. Custom engines can implement it or inherit `BaseEngine` and use its `_close()` hook to release owned resources. Existing custom engines without `close()` remain compatible at runtime.
+
 ## 0.2.5 - 2026-11-19
 
 ### Added

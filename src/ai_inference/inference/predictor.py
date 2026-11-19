@@ -19,7 +19,11 @@ class DefaultPredictor:
     def __init__(self, engine: Engine, config: Config, *, batcher: Batcher | None = None):
         self.engine = engine
         self.config = config
-        self.batcher = Batcher(config) if batcher is None else batcher
+        self.batcher = (
+            Batcher(config, capabilities=getattr(engine, "batch_capabilities", None))
+            if batcher is None
+            else batcher
+        )
         if self.batcher.config != config:
             raise ValueError("Batcher and Predictor contracts must match")
 

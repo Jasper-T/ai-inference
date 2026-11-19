@@ -110,6 +110,17 @@ def test_selected_vendor_builds_match_locked_hashes(python, arch):
             {"pytest", "aclruntime", "ais-bench"},
             {"onnxruntime", "onnxruntime-gpu"},
         ),
+        (
+            ["--extra", "tensorrt-cu12"],
+            {
+                "pytest",
+                "tensorrt-cu12",
+                "tensorrt-cu12-bindings",
+                "tensorrt-cu12-libs",
+                "cuda-bindings",
+            },
+            {"onnxruntime", "onnxruntime-gpu", "aclruntime", "ais-bench"},
+        ),
     ],
 )
 def test_backend_exports_keep_tools_without_other_runtimes(
@@ -143,7 +154,17 @@ def test_backend_exports_keep_tools_without_other_runtimes(
 @pytest.mark.parametrize(
     "first,second",
     tuple(
-        combinations(("onnx-cpu", "onnx-gpu-cu11", "onnx-gpu-cu12", "onnx-gpu-cu13", "ascend"), 2)
+        combinations(
+            (
+                "onnx-cpu",
+                "onnx-gpu-cu11",
+                "onnx-gpu-cu12",
+                "onnx-gpu-cu13",
+                "ascend",
+                "tensorrt-cu12",
+            ),
+            2,
+        )
     ),
 )
 def test_inference_backend_extras_are_pairwise_exclusive(tmp_path, first, second):
@@ -171,3 +192,35 @@ def test_removed_generic_gpu_extra_is_rejected(tmp_path):
     )
     assert result.returncode != 0
     assert "onnx-gpu" in result.stderr
+
+
+def test_tensorrt_uses_official_wheels_and_platform_markers():
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    lock = tomllib.loads((ROOT / "uv.lock").read_text())
+    requirements = [
+        Requirement(raw) for raw in project["project"]["optional-dependencies"]["tensorrt-cu12"]
+    ]
+    for raw_environment, count in [
+        (("linux", "x86_64", "3.10"), 4),
+        (("win32", "AMD64", "3.12"), 4),
+        (("darwin", "arm64", "3.12"), 0),
+        (("linux", "aarch64", "3.12"), 0),
+        (("linux", "x86_64", "3.13"), 0),
+    ]:
+        platform, machine, python = raw_environment
+        environment = dict(
+            sys_platform=platform,
+            platform_machine=machine,
+            python_version=python,
+            python_full_version=python + ".0",
+            implementation_name="cpython",
+        )
+        assert (
+            sum(requirement.marker.evaluate(environment) for requirement in requirements) == count
+        )
+    for name in ("tensorrt-cu12-bindings", "tensorrt-cu12-libs"):
+        package = next(p for p in lock["package"] if p["name"] == name)
+        assert package["version"] == "10.16.0.72"
+        assert package["source"] == {"registry": "https://pypi.nvidia.com/"}
+        assert "sdist" not in package and package["wheels"]
+        assert all("sha256:" in wheel["hash"] for wheel in package["wheels"])

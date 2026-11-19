@@ -87,6 +87,24 @@ def test_all_sources_share_color_results_and_one_model(application, image, monke
     assert application.state.runtime is None
 
 
+def test_service_shutdown_and_startup_failure_close_model():
+    closed = []
+
+    class OwnedModel(FakeModel):
+        def close(self):
+            closed.append(self)
+
+    settings = Settings(model_config_path="unused.yaml")
+    with TestClient(create_app(settings, model_factory=OwnedModel)):
+        assert not closed
+    assert len(closed) == 1
+    mismatch = settings.model_copy(update={"input_color": "RGB"})
+    with pytest.raises(ValueError, match="input_color"):
+        with TestClient(create_app(mismatch, model_factory=OwnedModel)):
+            pass
+    assert len(closed) == 2
+
+
 def test_batch_is_ordered_and_atomic(application, image):
     encoded = base64.b64encode(image).decode()
     with TestClient(application) as client:

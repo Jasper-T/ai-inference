@@ -84,8 +84,9 @@ def create_app(settings: Settings | None = None, *, model_factory=Model) -> Fast
         try:
             yield
         finally:
+            runtime = app.state.runtime
             app.state.runtime = None
-            # The SDK currently has no public close() contract. Drop our model reference.
+            await run_in_threadpool(runtime.close)
 
     app = FastAPI(title="Single-model inference", version="1.0", lifespan=lifespan)
     app.state.runtime = None

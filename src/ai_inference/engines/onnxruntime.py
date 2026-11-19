@@ -62,10 +62,16 @@ class ONNXRuntimeOptions(Section):
 class ONNXRuntimeEngine(BaseEngine):
     def __init__(self, config: Config):
         super().__init__(config)
-        runtime = ONNXRuntimeOptions.model_validate(config.runtime.options)
-        self._load_session(runtime)
-        # A broken model contract is not a provider failure; don't retry it.
-        self._load_tensor_contract()
+        self.session = None
+        with self._initialization():
+            runtime = ONNXRuntimeOptions.model_validate(config.runtime.options)
+            self._load_session(runtime)
+            # A broken model contract is not a provider failure; don't retry it.
+            self._load_tensor_contract()
+
+    def _close(self) -> None:
+        # ORT Python exposes no public session close API; release our ownership.
+        self.session = None
 
     def _load_session(self, runtime: ONNXRuntimeOptions) -> None:
         """Create the session using only explicitly configured providers."""
@@ -84,6 +90,7 @@ class ONNXRuntimeEngine(BaseEngine):
         # A single candidate is strict. Longer lists allow initialization fallback
         # to the next explicitly configured provider, never to an implicit one.
         for start in range(len(candidates)):
+            session = None
             chosen = candidates[start:]
             names = [p.name for p in chosen]
             options = ort.SessionOptions()
@@ -104,6 +111,8 @@ class ONNXRuntimeEngine(BaseEngine):
                         f"ORT provider initialization failed: requested {names}, active {active}"
                     )
             except Exception:
+                # A traceback must not retain an unsuccessfully initialized session.
+                session = None
                 if start + 1 == len(candidates):
                     raise
                 continue

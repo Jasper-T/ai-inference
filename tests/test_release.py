@@ -374,6 +374,7 @@ def test_ascend_wheel_selection(python, arch):
         "onnx-gpu-cu12",
         "onnx-gpu-cu13",
         "ascend",
+        "tensorrt-cu12",
     }
     dependencies = [Requirement(raw) for raw in extras["ascend"]]
     assert {r.name for r in dependencies} == {"aclruntime", "ais-bench"}

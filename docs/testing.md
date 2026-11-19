@@ -27,6 +27,20 @@ Ascend 的实际运行依赖由 `ascend` extra 声明，`tool.uv.sources` 指定
 
 覆盖 OM 自动发现、静态 batch 冲突、原始/解析后元数据日志、RT-DETR 符号输出和 RF-DETR 统一阈值，以及 RF-DETR/YOLO/RT-DETR/YuNet/SFace 前后处理、处理器注入、固定/动态 batch、padding、非法输入、provider失败和模型I/O契约。ort 使用实际 CPU ORT 与合成模型，不代表 GPU、真实权重或识别效果验证。
 
+## 原生 TensorRT 验证
+
+常规测试用模拟 TensorRT 和 CUDA Driver 覆盖批策略、缓冲区管理、转换工具以及 SDK 和服务的关闭流程。Package acceptance 的现有矩阵使用 CPU 或其他后端，原生 TensorRT 实机测试需要在目标 GPU 环境单独运行。
+
+在兼容的 NVIDIA GPU 主机上执行，保留默认开发依赖以安装 pytest 和 ONNX：
+
+```bash
+uv sync --locked --python 3.12 --extra tensorrt-cu12
+uv run --locked --no-sync python -c "import onnx, pytest, tensorrt; from cuda.bindings import driver; print(tensorrt.__version__)"
+AI_INFERENCE_TENSORRT_GPU_TESTS=1 uv run --locked --no-sync python -m pytest -q -rs tests/test_tensorrt_gpu.py
+```
+
+PowerShell 先设置 `$env:AI_INFERENCE_TENSORRT_GPU_TESTS = '1'`，再运行最后一行中从 `uv run` 开始的命令。实机测试通过时应报告 **2 项通过**，分别覆盖静态与动态合成模型的转换和推理。实际业务模型仍需在部署环境核对 FP32/FP16 数值、批次边界和资源释放，见 [TensorRT 验证边界](tensorrt.md#验证边界)。
+
 ## 最低依赖验收
 
 [requirements/minimum.txt](../requirements/minimum.txt) 固定 ORT 与 HTTP 服务同时可用的共享依赖下限，覆盖 Python 3.10、3.11、3.12。Windows/Python 3.12 使用 NumPy 1.26.4，Linux/Python 3.12 使用 1.26.0；其余下限按表中的 Python 条件选择。验收环境同时安装 CPU ORT 1.18.0、FastAPI 0.115.0、Uvicorn 0.30.0 和 python-multipart 0.0.18，并执行完整 SDK、CPU ONNX 和服务测试。使用独立虚拟环境，避免直接降级日常开发环境。

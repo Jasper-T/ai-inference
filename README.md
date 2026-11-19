@@ -2,7 +2,7 @@
 
 通用 Python 模型推理 SDK，通过有序 Pipeline 执行前后处理，Engine 执行模型，Batcher 负责分批、补齐和结果合并。发行包名为 `ai-inference`，Python 导入名为 `ai_inference`。
 
-支持 ONNX Runtime 和静态 Ascend OM，提供 RF-DETR、YOLOv8 / YOLO11、RT-DETR、YuNet 和 SFace 的处理步骤。检测结果可包含关键点和掩码；当前没有内置分割模型。HTTP 接口由可选的 [service](docs/service/README.md) 模块提供，与 SDK 使用同一发行包及版本；通过 `service` extra 安装 HTTP 依赖。
+支持 ONNX Runtime 和静态 Ascend OM，提供 RF-DETR、YOLOv8 / YOLO11、RT-DETR、YuNet 和 SFace 的处理步骤。当前源码新增 [原生 TensorRT](docs/tensorrt.md)，变更见 [Unreleased](CHANGELOG.md#unreleased)。检测结果可包含关键点和掩码；当前没有内置分割模型。HTTP 接口由可选的 [service](docs/service/README.md) 模块提供，与 SDK 使用同一发行包及版本；通过 `service` extra 安装 HTTP 依赖。
 
 ## 安装
 
@@ -98,9 +98,11 @@ if len(faces.boxes):
 | [sface.yaml](configs/sface.yaml) | SFace 2021dec 特征提取 |
 | [rfdetr_om.yaml](configs/rfdetr_om.yaml) | 官方 RF-DETR Nano 转换的静态 OM / AIPP |
 
-ONNX 示例默认使用 CPU 和 BGR 图像。CPU / CUDA / TensorRT 共用模型契约，通过 `runtime.options.providers` 选择 `cpu`、`cuda`、`trt` 或有序列表 `[trt, cuda, cpu]`。单项严格使用指定后端；列表允许按序初始化降级和算子回退，执行失败直接抛错。
+ONNX 示例默认使用 CPU 和 BGR 图像。ONNX Runtime 的 CPU / CUDA / TensorRT providers 共用模型契约，通过 `runtime.options.providers` 选择 `cpu`、`cuda`、`trt` 或有序列表 `[trt, cuda, cpu]`。单项严格使用指定后端；列表允许按序初始化降级和算子回退，执行失败直接抛错。原生 TensorRT 使用 `runtime.backend: tensorrt` 加载序列化 engine，安装、批策略、转换工具及资源关闭见 [原生 TensorRT](docs/tensorrt.md)。
 
-相对模型路径以 YAML 所在目录解析。ONNX / OM 自动读取真实输入输出的名称、dtype、shape，YAML 中的 `inputs` / `outputs` 可作为可选约束；预后处理步骤仍须显式配置并匹配模型契约。静态模型不能通过修改 YAML 变成动态模型。默认执行 3 次引擎 warmup，可用 `runtime.warmup` / `warmup_runs` 调整。
+相对模型路径以 YAML 所在目录解析。内置后端读取模型输入输出的实际名称、dtype 和 shape，YAML 中的 `inputs` / `outputs` 可作为约束。预后处理步骤仍须显式配置并匹配模型契约。默认执行 3 次引擎 warmup，可用 `runtime.warmup` / `warmup_runs` 调整。
+
+模型使用完毕后可调用 `model.close()`，也可用 `with Model(...) as model` 在退出作用域时释放资源。关闭会等待已开始的模型操作完成。
 
 公开张量和内置前后处理使用 CPU NumPy。权重不随仓库分发，不自动下载；来源、哈希和许可由部署方核实。详细规则见 [配置与模型契约](docs/configuration.md)。
 
@@ -126,7 +128,7 @@ SFace 使用 YuNet 检测的五点；没有有效人脸时输出 `not_run` 状�
 
 ## 开发与验证
 
-从仓库根目录使用 [uv](https://docs.astral.sh/uv/) 安装源码和开发依赖。默认 `dev` 组包含测试和发布检查工具，不安装 CPU/GPU 推理后端。CPU、CUDA、Ascend 均显式选择后端；开发环境可保留默认组，纯运行环境添加 `--no-default-groups`。安装方式见 [完整安装指南](docs/installation.md)，后端同步规则见 [环境与后端选择](docs/configuration.md#环境与后端选择)。
+从仓库根目录使用 [uv](https://docs.astral.sh/uv/) 安装源码和开发依赖。默认 `dev` 组包含测试和发布检查工具。安装推理依赖时显式选择一个后端 extra；纯运行环境添加 `--no-default-groups`。安装方式见 [完整安装指南](docs/installation.md)，后端同步规则见 [环境与后端选择](docs/configuration.md#环境与后端选择)。
 
 ```bash
 uv sync --locked --extra service --extra onnx-cpu
@@ -137,16 +139,17 @@ uv run --locked --no-sync python scripts/test.py all
 uv build --build-constraint .github/build-constraints.txt
 ```
 
-以上命令同时验证 SDK 和服务；不启用 `service` extra 时服务测试会跳过。无 ORT 的 Ascend 开发环境运行 `scripts/test.py quick` 与 `smoke`；完整 `all`/`ort` 需要所选 ONNX Runtime 后端。服务说明见 [HTTP 服务](docs/service/README.md)。新增运行依赖用 `uv add`，开发工具用 `uv add --dev`，测试依赖用 `uv add --group test`，并提交 `pyproject.toml` 和 `uv.lock`。修改 Ascend 厂商来源后先运行 `uv lock`，再运行 `python scripts/ascend_requirements.py`，从锁文件哈希同步生成 pip 安装文件。
+以上命令验证 SDK、HTTP 服务与 CPU ONNX 推理。仅安装原生 TensorRT 或 Ascend 的开发环境可以运行 `scripts/test.py quick` 与 `smoke`。TensorRT 实机测试需单独启用，见 [测试与复现](docs/testing.md#原生-tensorrt-验证)。新增运行依赖用 `uv add`，开发工具用 `uv add --dev`，测试依赖用 `uv add --group test`，并提交 `pyproject.toml` 和 `uv.lock`。修改 Ascend 厂商来源后先运行 `uv lock`，再运行 `python scripts/ascend_requirements.py`，从锁文件哈希同步生成 pip 安装文件。
 
 ## 文档
 
 - [安装指南](docs/installation.md)：源码、Release wheel、自行构建、离线安装与后端选择。
 - [CHANGELOG](CHANGELOG.md)：版本变化与升级迁移。
 - [模型下载](docs/model-downloads.md)：各配置对应的官方权重、ONNX 文件与导出方式。
-- [源码目录与职责](docs/architecture.md)：组件职责与执行边界。
+- [模块边界与演进约定](docs/architecture.md)：组件职责与执行边界。
 - [可组合处理管道](docs/pipeline.md)：步骤、Context、几何信息与设备策略。
 - [配置与模型契约](docs/configuration.md)：张量、batch 和运行时选项。
+- [原生 TensorRT](docs/tensorrt.md)：CUDA 12 安装、模型转换、批策略和资源关闭。
 - [处理器与扩展](docs/extension.md)：自定义步骤、处理器、Engine 和 Predictor。
 - [日志与性能测量](docs/logging-and-benchmark.md)：日志上下文与 benchmark。
 - [测试与复现](docs/testing.md)：自动化测试、真实模型导出与参考对照。

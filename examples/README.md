@@ -30,6 +30,8 @@ SFace不是检测模型，额外调用本地YuNet获取五点，同样使用 `te
 
 标注默认不添加顶部标题或统计，类别颜色与Ultralytics的20色调色板一致，同类保持相同颜色。
 
+使用原生 TensorRT 时，先在目标 GPU 环境将对应的 ONNX 模型转换为 engine，再在模型 YAML 的副本中修改模型路径和后端。现有处理步骤可在张量契约匹配时复用，安装和配置见 [原生 TensorRT](../docs/tensorrt.md)。
+
 ## HTTP 服务调用
 
 [service.py](service.py) 调用已经启动的服务，客户端不加载模型。示例使用 `httpx`，`service` extra 和仓库默认开发依赖均包含它；独立客户端环境可执行 `pip install httpx`，不需要安装 SDK 或推理后端。

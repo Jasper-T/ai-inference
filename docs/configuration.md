@@ -9,11 +9,11 @@
 | `model` | 模型名称、路径 |
 | `runtime` | 公共字段：`backend`、`batch`、`options`、`warmup`、`warmup_runs` |
 | `runtime.options` | 对应 Engine 的专有参数，由该 Engine 严格校验 |
-| `inputs` / `outputs` | ONNX / OM 均可省略，默认读取模型；显式提供时作为预期约束。自定义后端默认仍须提供完整契约 |
+| `inputs` / `outputs` | ONNX / OM / 原生 TensorRT 均可省略，默认读取模型；显式提供时作为预期约束。自定义后端默认仍须提供完整契约 |
 | `preprocess` / `postprocess` | 有序steps与设备；平铺配置不再支持 |
 
 YAML 相对路径以 YAML 所在目录为基准；直接构造 `Config` 时，相对模型路径以进程工作目录为基准。
-ONNX / OM 加载后自动读取输入输出的名称、dtype、shape，用于预处理检查、解码器检查、warmup 和推理校验。`Model.config` 和 `Model.engine.config` 保存解析后的完整契约；原始配置对象不被修改。`preprocess` / `postprocess` 的处理步骤仍须显式配置，不根据 shape 猜测颜色、归一化或输出含义。
+内置后端加载模型后自动读取输入输出的名称、dtype、shape，用于预处理检查、解码器检查、warmup 和推理校验。`Model.config` 和 `Model.engine.config` 保存解析后的完整契约；原始配置对象不被修改。`preprocess` / `postprocess` 的处理步骤仍须显式配置，不根据 shape 猜测颜色、归一化或输出含义。
 
 可以完全省略 `inputs` / `outputs`，也可以只提供其中一侧；提供某一侧时，名称列表须覆盖该侧所有模型张量，`dtype` 和 `shape` 可分别省略，例如：
 
@@ -24,9 +24,9 @@ inputs:
 # outputs 自动读取
 ```
 
-显式配置的名称、dtype、rank 和固定维度不一致时，加载失败。固定模式下，模型的符号 batch 由 `runtime.batch.size` 约束；其余符号维度转换为 `null`；显式配置的具体尺寸可约束模型的符号维度，并在运行时继续校验。无法确定的非 batch 尺寸仍可能需要显式约束，以满足内置解码器或 warmup 的要求。批处理策略仍由 `runtime.batch` 配置，不自动推断。
+显式配置的名称、dtype、rank 和固定维度不一致时，加载失败。固定模式下，模型的符号 batch 由 `runtime.batch.size` 约束；其余符号维度转换为 `null`；显式配置的具体尺寸可约束模型的符号维度，并在运行时继续校验。无法确定的非 batch 尺寸仍可能需要显式约束，以满足内置解码器或 warmup 的要求。ONNX / OM 批处理策略仍由 `runtime.batch` 配置，不自动推断。原生 TensorRT 可从产物推导省略的批策略，并由 Batcher 将动态尾批补齐到 profile 下限，详见 [原生 TensorRT](tensorrt.md)。
 
-加载 ONNX / OM 后，引擎通过类内 `read_tensor_metadata()` 读取实际张量信息；`Model` 调用引擎的日志方法，通过 Loguru 在 INFO 级别记录每个输入输出的实际名称、dtype、原始 shape（包含符号维度）和解析后采用的 resolved_shape。模型契约与 Pipeline 校验通过后，还会打印采用的 batch mode、size、size_role 和有效 padding 策略。默认输出到终端，也可指定应用的 Loguru logger：
+加载模型后，引擎通过 `read_tensor_metadata()` 读取实际张量信息；`Model` 调用引擎的日志方法，通过 Loguru 在 INFO 级别记录每个输入输出的实际名称、dtype、原始 shape（包含符号维度）和解析后采用的 resolved_shape。模型契约与 Pipeline 校验通过后，还会打印采用的 batch mode、size、size_role 和有效 padding 策略。默认输出到终端，也可指定应用的 Loguru logger：
 
 ```python
 from loguru import logger
@@ -49,7 +49,7 @@ for tensor in session.get_inputs() + session.get_outputs():
 
 ## 执行设备
 
-`runtime.options.providers`接受简写名称或有序列表：
+ONNX Runtime 的 `runtime.options.providers` 接受简写名称或有序列表：
 
 ```yaml
 runtime:
@@ -97,6 +97,8 @@ runtime:
     padding: repeat_last
 ```
 
+原生 TensorRT 使用 `runtime.backend: tensorrt` 和 `runtime.options.device_id`，默认设备编号为 0。配置示例见 [原生 TensorRT](tensorrt.md#配置和批策略)。
+
 ## 最低依赖组合
 
 当前源码最低使用 Python 3.10；`X | Y` 类型注解和运行时类型别名需要该版本，不能只修改 `requires-python` 来支持 Python 3.9 或 3.8。
@@ -129,6 +131,8 @@ Python 通过 uv 自带的 `--python` 选择，与后端 extra 独立，不需�
 uv sync --locked --extra service --extra onnx-cpu
 # CUDA 11 开发环境，保留开发工具而不安装 CPU ORT 包
 uv sync --locked --python 3.10 --extra service --extra onnx-gpu-cu11
+# 原生 TensorRT 开发环境
+uv sync --locked --python 3.12 --extra service --extra tensorrt-cu12
 # Ascend 开发环境，不安装任何 ORT 包
 uv sync --locked --python 3.12 --extra service --extra ascend
 # 纯运行环境：在所选命令上添加 --no-default-groups
@@ -144,7 +148,7 @@ CPU ORT 1.18.0 在 Python 3.10 要求 NumPy ≥1.21.6，Python 3.11 要求 NumPy
 
 ## CUDA 部署与失败
 
-`0.2.5` 提供以下选择；发布前可从当前仓库源码安装。`0.2.2` 的发行包不包含 `onnx-gpu-cu11`，旧 `onnx-gpu` 入口需迁移为明确的 CUDA 系列：
+以下是 ONNX Runtime GPU 的 CUDA 选项。旧 `onnx-gpu` 入口需迁移为明确的 CUDA 系列。原生 TensorRT 的 CUDA 12 安装方式见 [TensorRT 安装指南](tensorrt.md#安装与适用范围)。
 
 | Extra | ORT 范围 | 环境要求 |
 | --- | --- | --- |
@@ -156,7 +160,7 @@ CUDA 与 cuDNN 要求依据 [官方兼容表](https://onnxruntime.ai/docs/execut
 
 ### CUDA 11 安装
 
-`onnx-gpu-cu11` 固定 PyPI 的 ONNX Runtime GPU 1.18.1（CUDA 11.8 构建、cuDNN 8），并约束 NumPy <2 和 OpenCV <4.12，避免旧 ORT 与 NumPy 2 的 ABI 冲突以及新版 OpenCV 对 NumPy 2 的要求。新增入口发布前从仓库根目录安装：
+`onnx-gpu-cu11` 固定 PyPI 的 ONNX Runtime GPU 1.18.1（CUDA 11.8 构建、cuDNN 8），并约束 NumPy <2 和 OpenCV <4.12，避免旧 ORT 与 NumPy 2 的 ABI 冲突以及新版 OpenCV 对 NumPy 2 的要求。从仓库根目录安装：
 
 ```bash
 python -m pip install '.[onnx-gpu-cu11]'
@@ -176,22 +180,22 @@ CUDA 11 extra 不提供 Linux ARM64、macOS 或 Python ≥3.13 的 GPU wheel；�
 
 在仓库中使用 `uv sync --locked --no-default-groups --extra onnx-gpu-cu12` 或 `uv sync --locked --python 3.12 --no-default-groups --extra onnx-gpu-cu13` 安装纯运行环境；开发时去掉 `--no-default-groups` 即可保留开发工具。实际 ORT 版本见 `uv.lock`；显卡驱动、CUDA 和 cuDNN 仍须自行准备。pip 安装源码时可使用 `python -m pip install '.[onnx-gpu-cu13]'`，服务环境组合为 `'.[service,onnx-gpu-cu13]'`。
 
-extras 使用 Python/平台条件排除不支持的组合。比如 ARM64 上选择 cu11/cu12、Python 3.10 上选择 cu13、macOS 上选择任一 CUDA extra，安装工具可能跳过 GPU 依赖并成功退出；这不代表该环境支持 GPU。先核对上表，再检查 ORT 是否实际安装，并执行严格 CUDA 模型推理。CPU、cu11、cu12、cu13、Ascend 在 uv 中两两互斥；`service`、`dev`、`test` 可以与选定后端组合。pip 不强制该互斥，不要组合安装多个后端。旧 `onnx-gpu` 已移除，必须迁移为明确的 CUDA 系列。
+extras 使用 Python/平台条件排除不支持的组合。比如 ARM64 上选择 cu11/cu12、Python 3.10 上选择 cu13、macOS 上选择任一 CUDA extra，安装工具可能跳过 GPU 依赖并成功退出；这不代表该环境支持 GPU。先核对上表，再检查 ORT 是否实际安装，并执行严格 CUDA 模型推理。uv 要求从 ONNX Runtime CPU、三个 ORT CUDA 系列、原生 TensorRT 和 Ascend 中选择一个后端。`service`、`dev`、`test` 可与所选后端组合。使用 pip 时也应只选一个后端。旧 `onnx-gpu` 已移除，必须迁移为明确的 CUDA 系列。
 
 ### Linux ARM64 GPU 安装
 
-`0.2.5` 的 Linux ARM64 环境使用 `onnx-gpu-cu13`，与 x86_64 的运行时要求不同。截至 2026-10-15，PyPI 上的 `onnxruntime-gpu` 从 1.29.0 开始提供 Linux aarch64 wheel；当前 1.31.0 的 ARM64 wheel 要求 CPython ≥3.11、glibc ≥2.34，GPU 运行需要 CUDA ≥13.0、cuDNN 9 和兼容的 NVIDIA 驱动。文件标签见 [PyPI 发行文件](https://pypi.org/project/onnxruntime-gpu/1.31.0/#files)，CUDA 与 cuDNN 要求见上面的官方兼容表。
+Linux ARM64 上的 ONNX Runtime GPU 使用 `onnx-gpu-cu13`，与 x86_64 的运行时要求不同。截至 2026-10-15，PyPI 上的 `onnxruntime-gpu` 从 1.29.0 开始提供 Linux aarch64 wheel；当前 1.31.0 的 ARM64 wheel 要求 CPython ≥3.11、glibc ≥2.34，GPU 运行需要 CUDA ≥13.0、cuDNN 9 和兼容的 NVIDIA 驱动。文件标签见 [PyPI 发行文件](https://pypi.org/project/onnxruntime-gpu/1.31.0/#files)，CUDA 与 cuDNN 要求见上面的官方兼容表。
 
 ARM64 的 Python 3.10 或 CUDA 12 环境不能直接使用这些 PyPI GPU wheel；需要匹配设备的厂商构建或自行编译，不能用 CPU 包代替 GPU 包。Jetson 须另外核对 JetPack、驱动、CUDA/cuDNN 和 GPU 型号，wheel 的 aarch64 标签本身不保证设备兼容。macOS ARM64 不使用 NVIDIA CUDA extra，应使用 `onnx-cpu`。
 
 在已准备好上述系统环境的 Linux ARM64 设备上安装：
 
 ```bash
-# 待 0.2.5 发布到 PyPI 后，安装 SDK 与 CUDA 13 GPU 运行时
+# 使用已提供 CUDA 13 extra 的 PyPI 版本，以下以 0.2.5 为例
 uv venv --python 3.12
 uv pip install --python .venv/bin/python 'ai-inference[onnx-gpu-cu13]==0.2.5'
 
-# 或在本仓库明确选择 CUDA 13 环境（0.2.5 extra）
+# 或从源码使用锁定的 CUDA 13 环境
 uv sync --locked --python 3.12 --no-default-groups --extra onnx-gpu-cu13
 
 # 查看实际 ORT 版本与已编译的 providers
@@ -203,6 +207,8 @@ CUDA 系列 extra 不自动检测本机 CUDA，也不安装 NVIDIA 驱动或系�
 OpenCV 前后处理仍在 CPU 执行。目标设备应单独验证 provider 初始化、真实权重 warmup、显存、延迟和结果一致性；provider 降级及执行失败行为见上文“执行设备”。
 
 ## 批处理
+
+以下规则适用于 ONNX Runtime 和静态 OM。
 
 - `mode: fixed`：`size` 等于模型固定 batch。5 张输入、size=4 时执行两个批次，返回 5 项。
 - `padding: repeat_last`：不足一批时复制最后一张；`zeros` 填充归一化张量域的零。
@@ -220,7 +226,9 @@ OpenCV 前后处理仍在 CPU 执行。目标设备应单独验证 provider 初�
 
 输入和输出都按实际模型元数据检查。冲突错误包含张量名称、模型 batch、配置 mode/size 和修改建议；SDK 不自动改变 batch 策略。运行时继续检查所有张量的实际 batch 一致性。OM 当前只允许静态模型与 fixed 策略。
 
-修改 YAML 不能改变模型的固定 batch。OM 当前仅支持静态固定 batch；动态模式仅适用于支持它的后端。补齐要求各样本推理独立；各批输出的非 batch 维必须可拼接。
+原生 TensorRT 省略 `runtime.batch` 或指定 `mode: auto` 时从 engine 推导策略。显式 `mode: dynamic` 以 `size` 为上限，并可按所有输入共同匹配的 profile 下限补齐尾批。详见 [TensorRT 批策略](tensorrt.md#配置和批策略)。
+
+补齐要求各样本推理独立，各批输出的非 batch 维必须可拼接。
 图片会一次性预处理并保存在内存，大量输入建议由调用方分段提交。
 
 ## RF-DETR
@@ -307,10 +315,10 @@ RT-DETR deploy 输出已经换算为原图坐标，前处理必须使用无 padd
 
 `runtime.warmup` 默认 true，`runtime.warmup_runs` 默认 3，次数必须为正整数。
 Model 在引擎加载、处理流程和Batcher配置完成后触发 `Engine.warmup()`，不执行图像前后处理。默认输入由引擎的 `create_warmup_inputs()` 按契约名称、dtype、shape创建零张量。
-固定 batch 使用配置大小，动态 batch 使用 1；非 batch 输入维度未确定时需补齐尺寸或关闭 warmup。
+固定 batch 使用配置大小。动态 ONNX Runtime 使用 batch 1，动态 TensorRT 使用当前输入尺寸允许的最小 batch。非 batch 输入维度未确定时需提供具体尺寸或关闭自动 warmup。
 warmup 异常直接向上传递；模型若不接受全零输入，应关闭 warmup，由调用方使用有效样本预热。
 直接创建 Engine 不自动 warmup。默认预热会增加 Model 构造耗时。
-预热实现位于 `BaseEngine.warmup()`；Model 按配置触发，引擎也可独立调用 `engine.warmup()`。内置 ONNX/OM 共用这套逻辑，预热输入输出经过公共 `infer()` 校验。
+预热实现位于 `BaseEngine.warmup()`；Model 按配置触发，引擎也可独立调用 `engine.warmup()`。内置 ONNX Runtime、OM 和 TensorRT 共用这套执行入口，预热输入输出经过公共 `infer()` 校验。
 特殊引擎可覆盖 `create_warmup_inputs()` 或整个 `warmup()`。调用方也可先关闭自动预热，再通过 `model.warmup(tensors)` 或 `engine.warmup(tensors)` 提供合法输入；动态尺寸可由这些张量确定。输入须满足物理batch约束，不会自动拆批/补齐。例如固定batch=4时，可以使用Batcher准备的第一批：
 
 ```python

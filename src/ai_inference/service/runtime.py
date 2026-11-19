@@ -17,8 +17,19 @@ class Runtime:
     def __init__(self, settings: Settings, model_factory=Model):
         self.settings = settings
         self.model = model_factory(settings.model_config_path)
+        self.lock = Lock()
+        try:
+            self._configure()
+        except Exception:
+            try:
+                self.close()
+            except Exception:
+                pass  # Preserve the service configuration error.
+            raise
+
+    def _configure(self):
         declared_color = self.model.config.preprocess.get("source_color", "BGR")
-        if declared_color != settings.input_color:
+        if declared_color != self.settings.input_color:
             raise ValueError("Service input_color must match model preprocess.source_color")
         self.requires_keypoints = any(
             "face_align" in step and not step["face_align"].get("aligned_input", False)
@@ -27,7 +38,12 @@ class Runtime:
         self.accepts_keypoints = any(
             "face_align" in step for step in self.model.config.preprocess["steps"]
         )
-        self.lock = Lock()
+
+    def close(self):
+        with self.lock:
+            close = getattr(self.model, "close", None)
+            if close is not None:
+                close()
 
     def predict(
         self, sources: list[Callable[[], bytes]], metadata: list[ImageMetadata]

@@ -11,6 +11,7 @@
 | verify_rtdetr.py | RT-DETR ONNX与官方PyTorch模型对照 |
 | export_rfdetr.py | 官方 Nano COCO checkpoint 导出并验证 ONNX 原始输出：`python scripts/export_rfdetr.py` |
 | export_rtdetr.py | 本地官方checkpoint导出，输出ONNX和导出记录 |
+| [convert_tensorrt.py](convert_tensorrt.py) | 在目标 NVIDIA GPU 环境将 ONNX 转换为 TensorRT engine |
 | clean_python_cache.py | 清理仓库 __pycache__ / pyc / pyo：`uv run --locked --no-sync python -B scripts/clean_python_cache.py` |
 | test.py | 维护测试的便捷入口：`uv run --locked --no-sync python scripts/test.py all`，另支持quick、smoke、ort |
 | ascend_requirements.py | 从 Ascend extra 的 wheel 来源和锁定哈希生成 pip 依赖清单；`--check` 检查文件是否一致 |
@@ -45,3 +46,11 @@ CPU 开发环境先执行 `uv sync --locked --extra onnx-cpu`。`uv sync --locke
 执行 `uv build --build-constraint .github/build-constraints.txt` 后运行 `uv run --locked --no-sync python scripts/check_dist.py dist`。检查脚本在临时环境中安装基础 wheel 和 HTTP/CPU wheel，再解压 sdist，仅用归档内的文件安装锁定的测试依赖并执行 `scripts/test.py all`。检查会下载依赖，结束后自动清理临时环境。
 
 源码包内的 `test_release_requires_acceptance_of_selected_tag` 读取工作流配置，检查发布任务必须依赖目标 tag 的验收；它不启动 GitHub Actions。`check_dist.py` 可独立在本地运行，现有 Package acceptance 和 GitHub Release 工作流也执行同一检查，任何失败都会阻止后续发布。
+
+正式打标签前，将 `CHANGELOG.md` 中本次发布的变更移入对应版本章节，并同步 `pyproject.toml`、`ai_inference.__version__` 和 `uv.lock`。在 Python 3.12 环境运行 `python scripts/release.py validate --tag vX.Y.Z --source .` 检查版本和发布说明，将 `vX.Y.Z` 替换为目标标签。原生 TensorRT 的设备验收见 [测试说明](../docs/testing.md#原生-tensorrt-验证)。
+
+## ONNX → TensorRT engine
+
+`python scripts/convert_tensorrt.py models/model.onnx models/model.engine --profile 'images=2x3x640x640:4x3x640x640:8x3x640x640'`
+
+工具直接使用 OnnxParser 和 Builder，需在目标 NVIDIA GPU 与 TensorRT 10 环境执行。`--precision fp16` 允许 FP16，默认 fp32；`--workspace-mib` 控制构建 workspace。多个输入用分号分隔，重复 `--profile` 添加 profiles。静态模型无需 profile。转换选项由产物生成者管理，SDK 只消费 engine，不导入转换脚本；详见 [原生 TensorRT](../docs/tensorrt.md)。

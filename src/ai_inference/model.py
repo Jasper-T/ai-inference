@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from functools import wraps
 from pathlib import Path
+from threading import Condition, local
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -31,6 +33,27 @@ if TYPE_CHECKING:
     from loguru import Logger
 
 
+def _open_operation(method):
+    @wraps(method)
+    def checked(self, *args, **kwargs):
+        if getattr(self._operation_local, "active", False):
+            return method(self, *args, **kwargs)
+        with self._lifecycle_condition:
+            if self._closed or self._closing:
+                raise RuntimeError("Model is closed")
+            self._active_operations += 1
+        self._operation_local.active = True
+        try:
+            return method(self, *args, **kwargs)
+        finally:
+            self._operation_local.active = False
+            with self._lifecycle_condition:
+                self._active_operations -= 1
+                self._lifecycle_condition.notify_all()
+
+    return checked
+
+
 class Model:
     def __init__(
         self,
@@ -40,6 +63,11 @@ class Model:
         postprocessor: Postprocessor | None = None,
         logger: Logger | None = None,
     ):
+        self._lifecycle_condition = Condition()
+        self._operation_local = local()
+        self._active_operations = 0
+        self._closing = False
+        self._closed = False
         self.config = (
             config.model_copy(deep=True) if isinstance(config, Config) else Config.from_yaml(config)
         )
@@ -50,6 +78,10 @@ class Model:
             try:
                 self._initialize(preprocessor, postprocessor)
             except Exception as exc:
+                try:
+                    self.close()
+                except Exception:
+                    log_event("init", "model.cleanup", "Resource cleanup failed", level="WARNING")
                 log_event(
                     "init",
                     "model.failed",
@@ -91,7 +123,11 @@ class Model:
                 raise
             return pre, post
 
-        pre, post = compile_pipelines() if self.config.has_tensor_contract else (None, None)
+        pre, post = (
+            compile_pipelines()
+            if self.config.has_tensor_contract and self.config.runtime.batch.mode != "auto"
+            else (None, None)
+        )
         try:
             self.engine = EngineRegistry.create(self.config.runtime.backend, self.config)
         except Exception as exc:
@@ -123,12 +159,14 @@ class Model:
             pre, post = compile_pipelines()
         self.preprocessor: Preprocessor = pre if preprocessor is None else preprocessor
         self.postprocessor: Postprocessor = post if postprocessor is None else postprocessor
-        self.batcher = Batcher(self.config)
+        self.batcher = Batcher(
+            self.config, capabilities=getattr(self.engine, "batch_capabilities", None)
+        )
         self.predictor = DefaultPredictor(self.engine, self.config, batcher=self.batcher)
         if hasattr(self.engine, "log_tensor_metadata"):
             self.engine.log_tensor_metadata(self.logger)
         policy = self.config.runtime.batch
-        padding = policy.padding if policy.mode == "fixed" else "none"
+        padding = policy.padding if policy.mode == "fixed" or self.batcher.capabilities else "none"
         size_role = "fixed" if policy.mode == "fixed" else "max"
         log_event(
             "init",
@@ -143,6 +181,40 @@ class Model:
         if self.config.runtime.warmup:
             self.engine.warmup()
 
+    def close(self) -> None:
+        """Wait for model operations and release owned engine resources once."""
+        if getattr(self._operation_local, "active", False):
+            raise RuntimeError("Cannot close Model from an active model operation")
+        with self._lifecycle_condition:
+            while self._closing and not self._closed:
+                self._lifecycle_condition.wait()
+            if self._closed:
+                return
+            self._closing = True
+            while self._active_operations:
+                self._lifecycle_condition.wait()
+            engine = getattr(self, "engine", None)
+            close = getattr(engine, "close", None)
+            try:
+                if close is not None:
+                    close()
+            finally:
+                # Legacy backends have no explicit close contract; relinquish our ownership.
+                self.engine = None
+                self.predictor = None
+                self._closed = True
+                self._lifecycle_condition.notify_all()
+
+    def __enter__(self):
+        with self._lifecycle_condition:
+            if self._closed or self._closing:
+                raise RuntimeError("Model is closed")
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        self.close()
+
+    @_open_operation
     def warmup(self, tensors: Mapping[str, np.ndarray] | None = None) -> None:
         """Explicit warmup with optional valid physical-batch tensors."""
         with log_context(self.logger, model=self.config.model.name):
@@ -151,6 +223,7 @@ class Model:
             else:
                 self.engine.warmup(tensors)
 
+    @_open_operation
     def preprocess(self, images: ModelInput) -> PreparedInput:
         with log_context(self.logger, model=self.config.model.name):
             try:
@@ -178,6 +251,7 @@ class Model:
             )
             return prepared
 
+    @_open_operation
     def infer(self, prepared: PreparedInput) -> RawOutput:
         with log_context(self.logger, model=self.config.model.name):
             try:
@@ -210,6 +284,7 @@ class Model:
             )
             return raw
 
+    @_open_operation
     def postprocess(self, outputs: RawOutput) -> list[Result]:
         if not isinstance(outputs, RawOutput):
             raise TypeError("postprocess requires RawOutput")
@@ -246,5 +321,6 @@ class Model:
             )
             return results
 
+    @_open_operation
     def predict(self, images: ModelInput) -> list[Result]:
         return self.postprocess(self.infer(self.preprocess(images)))

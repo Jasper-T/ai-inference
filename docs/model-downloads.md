@@ -39,4 +39,8 @@ OpenCV Zoo 的 ONNX 文件使用 Git LFS，普通 `raw.githubusercontent.com` �
 
 默认示例按 Nano 的 384×384、静态 batch=1 和 91 个 COCO 类别槽位配置。当前 OM YAML 使用 BGR uint8 NHWC 输入，转换时必须嵌入静态 AIPP，包含与 ONNX 前处理相同的 BGR→RGB 和归一化。若仅将 ONNX 转换为普通 float32 NCHW OM、没有嵌入 AIPP，应沿用 ONNX 配置的颜色、归一化和 layout 步骤，并切换后端与文件路径。实际张量名、batch、AIPP 和数值一致性须在目标设备核对。
 
+## TensorRT engine
+
+在目标 NVIDIA GPU 环境用对应的 ONNX 文件生成序列化 engine。构建版本、平台、GPU 和插件会影响产物兼容性。转换命令和部署时的契约核对见 [原生 TensorRT](tensorrt.md#onnx-转换)。
+
 下载后的 SDK 示例见 [examples](../examples/README.md)，HTTP 服务启动与 SFace 输入见 [服务说明](service/README.md)。

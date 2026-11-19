@@ -17,7 +17,7 @@ class ModelConfig(Section):
 
 
 class BatchConfig(Section):
-    mode: Literal["fixed", "dynamic"] = "fixed"
+    mode: Literal["fixed", "dynamic", "auto"] = "fixed"
     size: int = Field(default=4, gt=0, strict=True)
     padding: Literal["repeat_last", "zeros"] = "repeat_last"
 
@@ -29,6 +29,19 @@ class RuntimeConfig(Section):
     batch: BatchConfig = Field(default_factory=BatchConfig)
     # Each engine validates its own strict options schema.
     options: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def default_native_batch(cls, value):
+        if isinstance(value, dict) and value.get("backend") == "tensorrt" and "batch" not in value:
+            return {**value, "batch": {"mode": "auto"}}
+        return value
+
+    @model_validator(mode="after")
+    def check_auto_batch(self):
+        if self.batch.mode == "auto" and self.backend != "tensorrt":
+            raise ValueError("runtime.batch.mode=auto is supported only by native TensorRT")
+        return self
 
 
 class TensorSpec(Section):
@@ -68,11 +81,14 @@ class Config(Section):
                 raise ValueError("duplicate tensor names")
             for spec in specs:
                 expected = batch.size if batch.mode == "fixed" else None
-                if spec.shape is not None and spec.shape[0] != expected:
+                if batch.mode != "auto" and spec.shape is not None and spec.shape[0] != expected:
                     raise ValueError(
                         "all tensor batch dimensions must match runtime.batch (null for dynamic)"
                     )
-        if self.runtime.backend not in ("onnxruntime", "om") and not self.has_tensor_contract:
+        if (
+            self.runtime.backend not in ("onnxruntime", "om", "tensorrt")
+            and not self.has_tensor_contract
+        ):
             raise ValueError("this backend requires explicit inputs/outputs with dtype and shape")
         return self
 

@@ -18,11 +18,18 @@ class OMOptions(Section):
 class OMEngine(BaseEngine):
     def __init__(self, config: Config):
         super().__init__(config)
-        options = OMOptions.model_validate(config.runtime.options)
-        if config.runtime.batch.mode != "fixed":
-            raise ValueError("OMEngine currently supports static fixed-batch inference only")
-        self._load_session(options)
-        self._load_tensor_contract()
+        self.session = None
+        with self._initialization():
+            options = OMOptions.model_validate(config.runtime.options)
+            if config.runtime.batch.mode != "fixed":
+                raise ValueError("OMEngine currently supports static fixed-batch inference only")
+            self._load_session(options)
+            self._load_tensor_contract()
+
+    def _close(self) -> None:
+        session, self.session = self.session, None
+        if session is not None:
+            session.free_resource()
 
     def _load_session(self, options: OMOptions) -> None:
         try:
